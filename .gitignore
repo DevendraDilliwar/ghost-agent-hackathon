@@ -1,0 +1,14 @@
+node_modules/
+out/
+release/
+coverage/
+.cache/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+.agents/
+.codex/
+.aws/
+.DS_Store

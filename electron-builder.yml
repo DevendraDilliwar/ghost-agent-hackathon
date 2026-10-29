@@ -1,0 +1,13 @@
+appId: dev.ghostagent.desktop
+productName: Ghost Agent
+asar: true
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+linux:
+  target:
+    - tar.gz
+  category: Utility
+npmRebuild: true
