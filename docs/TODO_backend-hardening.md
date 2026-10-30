@@ -11,6 +11,11 @@ Status: initial repository inventory, 2026-10-29, retained as a historical basel
 
 ## Audit Findings
 
+- [x] **FINDING-CONNECTION-001 [Medium] [First-run connection UI]**:
+  - **Issue**: The user-reported Xubuntu screenshot shows setup indicators above a large task composer while the key field is not clearly visible. `AgentChatView` always reserved a non-shrinking footer for the task form, even before connection readiness, and `ConnectionSetup` placed status tiles before the key input. This crowded the setup form into the remaining scroll area. The status tiles are informational, not checkboxes.
+  - **Risk**: A first-time user cannot discover where to enter a key and sees a disabled Start action without a clear setup path, particularly in a short VM window.
+  - **Proposed Fix**: Applied a dedicated setup view with the password input and Connect & test action first, automatic status labels below, and a compact setup footer. Keep the task composer hidden until setup is ready and Settings is closed; retain its draft while switching views. Use the available viewport height instead of a separate fixed minimum card height.
+
 - [x] **FINDING-PRELOAD-001 [High] [Sandboxed preload output]**:
   - **Issue**: The approved floating-window implementation initially made the multi-entry build emit a shared `out/preload/chunks/channels-*.cjs` and local chunk imports. Electron sandboxed preloads cannot require these generated local modules.
   - **Risk**: A successful source build can still produce a missing desktop bridge at startup, leaving native UI controls unavailable.
@@ -27,6 +32,8 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 
 ## Verified OK (No Action)
 
+- [x] **OK-CONNECTION-001** The existing named IPC key submission, session-only main-process key handling, immediate password-field clearing, text-only connection probe, and backend readiness enforcement already support in-app connection. Preserve these behaviors; no new secret persistence, model request, desktop action, or broader approval mode is required for this UI correction.
+
 - [x] **OK-UX-001** Preserve context isolation, sandboxing, blocked navigation/new windows/webviews, default-denied permissions, and strict sender/main-frame/URL checks in both windows. Keep action-by-action approval; this tranche does not add autonomous execution or a hosted backend/database.
 
 - [x] **OK-001** Verify that there is no existing service/database migration requiring modification or rollback in this repository snapshot. Preserve this boundary; no architecture rewrite is justified.
@@ -35,6 +42,12 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 No authentication flow, encryption implementation, API middleware, backup system, or production monitoring has been verified as adequate. Absence of code is not a passed quality check.
 
 ## Remediation Plan
+
+- [x] **FIX-CONNECTION-001 [First-run connection UI]**:
+  - **Change**: Update only the renderer app layout, task/setup view selection, and connection form presentation. Keep browser previews disconnected and setup editing unavailable during an active run.
+  - **Rollback**: Revert the changes to `src/renderer/src/app/App.tsx`, `src/renderer/src/features/chat/AgentChatView.tsx`, and `src/renderer/src/features/environment/ConnectionSetup.tsx`. No credential or user-data migration is involved.
+  - **Validation**: `npm run check` passes with 87 tests, TypeScript, ESLint, production bundles, and both sandboxed preload gates. Local server-rendering assertions pass for initial setup, loading, ready, connection testing, disconnected preview, rejected key, and active-run controls. These are render-state checks, not interactive native UI acceptance. No API credits were used.
+- [ ] **FIX-CONNECTION-LIVE-001 [Xubuntu acceptance]**: In the user's VM, verify that the password field and Connect & test button are reachable at the normal window size, enter a real key locally, confirm a failed test permits retry, confirm success reveals task entry, and confirm Settings preserves a typed task draft. No browser/native UI surface is available to this assistant for interactive verification.
 
 - [x] **FIX-PRELOAD-001 [Sandboxed preload output]**:
   - **Change**: Keep both preloads standalone and add `scripts/check-preloads.mjs` to `npm run check`. The controls preload exposes only matching-run pause/resume/stop, minimal state subscription, and task-window return.
