@@ -7,6 +7,7 @@ export interface ControlsSnapshot {
   readonly executed: number;
   readonly maxSteps: number;
   readonly canResume: boolean;
+  readonly emergencyStopShortcut: string | null;
 }
 
 export interface FloatingControlsBridge {

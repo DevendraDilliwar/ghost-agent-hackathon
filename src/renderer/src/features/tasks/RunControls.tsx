@@ -4,16 +4,17 @@ import type { AgentStatus } from '../../../../shared/contracts/task';
 interface RunControlsProps {
   status: AgentStatus;
   disabled: boolean;
+  emergencyStopShortcut: string | null;
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
   onTakeOver: () => void;
 }
 
-export function RunControls({ status, disabled, onPause, onResume, onStop, onTakeOver }: RunControlsProps) {
+export function RunControls({ status, disabled, emergencyStopShortcut, onPause, onResume, onStop, onTakeOver }: RunControlsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-xs text-slate-400">You stay in control · Ctrl + Shift + Escape to stop</p>
+      <p className="text-xs text-slate-400">{emergencyStopShortcut ? emergencyStopShortcut + ' to stop' : 'Use Stop to end this task'}</p>
       <div className="flex gap-2">
         {status === 'paused' ? <button type="button" disabled={disabled} onClick={onResume} className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs disabled:opacity-40"><Play className="h-3.5 w-3.5" />Resume</button>
           : status !== 'needs_user' && <button type="button" disabled={disabled} onClick={onPause} className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs disabled:opacity-40"><Pause className="h-3.5 w-3.5" />Pause</button>}

@@ -26,6 +26,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
       <ChatHeader status={status} connected={runtime.connected} ready={runtime.readiness?.ready} settingsDisabled={active} onOpenSetup={() => setShowSetup(true)} onCompact={runtime.showControls} />
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
         {!runtime.connected && <p className="rounded-xl border border-amber-500/30 p-3 text-xs leading-relaxed text-amber-200">Browser layout preview. Open the installed desktop app to connect Meta and operate your test desktop.</p>}
+        {ready && !active && <p role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs leading-relaxed text-emerald-200">Desktop connected. Write your task, select both permissions below, then send. Emergency Stop: {runtime.readiness?.emergencyStopShortcut}.</p>}
         {runtime.connected && !ready && !active && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-500/30 bg-indigo-950/30 p-3">
           <div className="space-y-2 text-xs leading-relaxed text-slate-300">
             <p>{modelReady ? 'Meta is connected. Complete the desktop checks below before running a task; your API key does not need to be entered again.' : 'Write your task below. Complete connection setup before Ghost Agent can run it.'}</p>
@@ -48,7 +49,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
         </details>}
       </div>
       <footer className="max-h-[60dvh] shrink-0 overflow-y-auto border-t border-slate-800/80 bg-slate-950/60 p-4 sm:p-5">
-        {active && <RunControls status={status} disabled={runtime.pending} onPause={runtime.pause} onResume={runtime.resume} onStop={runtime.stop} onTakeOver={runtime.takeOver} />}
+        {active && <RunControls status={status} disabled={runtime.pending} emergencyStopShortcut={runtime.readiness?.emergencyStopShortcut ?? null} onPause={runtime.pause} onResume={runtime.resume} onStop={runtime.stop} onTakeOver={runtime.takeOver} />}
         {!active && <TaskComposer key={task?.runId ?? 'new'} initialGoal={task?.goal ?? ''} initialLimit={task?.maxSteps ?? 15} busy={runtime.pending} connected={runtime.connected} modelReady={modelReady} ready={ready} onOpenSetup={() => setShowSetup(true)} onLaunch={runtime.launch} />}
       </footer>
       <ConnectionDialog open={showSetup && !active} runtime={runtime} onClose={() => setShowSetup(false)} />

@@ -40,7 +40,7 @@ export function TaskComposer({ connected, modelReady, ready, busy, initialGoal, 
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
           <span className="text-[11px] text-slate-400">Enter to send · Shift + Enter for a new line</span>
           <button type="submit" disabled={!canSubmit} className="flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40">
-            {busy ? 'Please wait…' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : 'Send task'}<Send className="h-4 w-4" />
+            {busy ? 'Please wait…' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Select permissions below' : 'Send task'}<Send className="h-4 w-4" />
           </button>
         </div>
       </div>

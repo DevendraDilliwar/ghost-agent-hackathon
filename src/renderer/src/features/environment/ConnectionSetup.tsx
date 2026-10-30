@@ -66,7 +66,7 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
       {ready && !ready.ready && <ul className="mt-4 list-disc space-y-1 border-t border-slate-800 pt-3 pl-4 text-xs leading-relaxed text-amber-200">
         {ready.issues.map(issue => <li key={issue}>{issue}</li>)}
       </ul>}
-      <p className="mt-3 text-[11px] text-slate-500">This build operates one Ubuntu X11 test display. Emergency Stop: Ctrl + Shift + Escape.</p>
+      <p className="mt-3 text-xs text-slate-400">{ready?.emergencyStopShortcut ? 'Emergency Stop: ' + ready.emergencyStopShortcut + '. Use it inside this desktop to stop a task, even when another app is focused.' : 'An available emergency Stop shortcut will be selected automatically. Recheck desktop retries if none were available.'}</p>
     </section>
   );
 }

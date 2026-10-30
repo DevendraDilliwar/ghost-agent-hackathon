@@ -23,7 +23,7 @@ export function MiniFloatingPopCard({ task, pending, error, onExpand, onPause, o
         <span className="flex items-center gap-2 text-xs font-semibold"><Bot className="h-4 w-4 text-indigo-300" />Ghost Agent</span>
         <span role="status" className={'text-[11px] ' + (attention ? 'text-amber-300' : 'text-slate-300')}>{task ? status === 'idle' ? 'No active task' : statusLabels[status] : 'Connecting…'}</span>
       </header>
-      <p className="mt-2 text-[11px] text-slate-400">{task ? task.executed + '/' + task.maxSteps + ' actions' : 'Waiting for desktop runtime'} · Drag the header to move</p>
+      <p className="mt-2 text-[11px] text-slate-400">{task ? task.executed + '/' + task.maxSteps + ' actions' : 'Waiting for desktop runtime'} · {task?.emergencyStopShortcut ? 'Stop: ' + task.emergencyStopShortcut : 'Drag the header to move'}</p>
       <div className="mt-3 flex items-center gap-2">
         {active && (resume
           ? <button type="button" disabled={pending} onClick={onResume} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-[11px] disabled:opacity-40"><Play className="h-3 w-3" />{status === 'needs_user' ? 'Done — resume' : 'Resume'}</button>

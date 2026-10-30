@@ -23,5 +23,6 @@ export interface RuntimeReadiness {
   readonly modelVerified: boolean;
   readonly desktopSupported: boolean;
   readonly emergencyStopReady: boolean;
+  readonly emergencyStopShortcut: string | null;
   readonly issues: string[];
 }

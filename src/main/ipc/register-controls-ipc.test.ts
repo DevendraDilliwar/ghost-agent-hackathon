@@ -15,7 +15,8 @@ function setup() {
   const contents = { mainFrame: frame };
   const window = { isDestroyed: () => false, webContents: contents } as unknown as BrowserWindow;
   const stop = vi.fn();
-  const runtime = { controller: { getSnapshot: () => ({ ...idleSnapshot(), runId: 'run-1' }), stop, pause: vi.fn(), resume: vi.fn() } } as unknown as TaskRuntime;
+  const runtime = { getControlsSnapshot: () => controlsSnapshot({ ...idleSnapshot(), runId: 'run-1' }, 'Ctrl + Alt + Shift + Escape'),
+    controller: { stop, pause: vi.fn(), resume: vi.fn() } } as unknown as TaskRuntime;
   const open = vi.fn();
   const dispose = registerControlsIpc(window, frame.url, runtime, open);
   const handlers = new Map(vi.mocked(ipcMain.handle).mock.calls.map(([channel, handler]) => [channel, handler]));
@@ -26,8 +27,13 @@ function setup() {
 describe('floating controls boundary', () => {
   it('excludes screenshots, goals, typed text, and model metadata from the controls snapshot', () => {
     const state = { ...idleSnapshot(), goal: 'private goal', screenshot: 'private screenshot', message: 'private action text' };
-    expect(controlsSnapshot(state)).toEqual({ runId: null, revision: 0, status: 'idle', executed: 0, maxSteps: 15, canResume: false });
-    expect(JSON.stringify(controlsSnapshot(state))).not.toContain('private');
+    expect(controlsSnapshot(state, 'Ctrl + Alt + Shift + Escape')).toEqual({ runId: null, revision: 0, status: 'idle', executed: 0, maxSteps: 15, canResume: false, emergencyStopShortcut: 'Ctrl + Alt + Shift + Escape' });
+    expect(JSON.stringify(controlsSnapshot(state, null))).not.toContain('private');
+  });
+
+  it('reports the selected shortcut through the restricted controls bridge', () => {
+    const { handlers, event } = setup();
+    expect(handlers.get(IPC_CHANNELS.controlsSnapshot)!(event)).toMatchObject({ emergencyStopShortcut: 'Ctrl + Alt + Shift + Escape' });
   });
 
   it('allows the trusted controls frame to stop a specific run without exposing task creation or credentials', () => {
