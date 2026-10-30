@@ -11,10 +11,15 @@ Status: initial repository inventory, 2026-10-29, retained as a historical basel
 
 ## Audit Findings
 
+- [x] **FINDING-CHAT-001 [Medium] [Task discovery]**:
+  - **Issue**: The user reported that there is no obvious chat-style place to give a task. The first connection-layout correction set `setupVisible` whenever readiness was false and hid the task composer, so a new user could not write a task before connecting Meta.
+  - **Risk**: Setup replaces the app's primary task interaction and makes the product appear to be only a connection checklist.
+  - **Proposed Fix**: Keep the idle task composer visible and editable before connection. A Set up & continue action opens a separate native HTML connection dialog without submitting a task. Keep the composer mounted while Settings is open, clear unsubmitted key input on dialog close, show submitted task messages in the conversation, and retain action controls/progress during execution.
+
 - [x] **FINDING-CONNECTION-001 [Medium] [First-run connection UI]**:
   - **Issue**: The user-reported Xubuntu screenshot shows setup indicators above a large task composer while the key field is not clearly visible. `AgentChatView` always reserved a non-shrinking footer for the task form, even before connection readiness, and `ConnectionSetup` placed status tiles before the key input. This crowded the setup form into the remaining scroll area. The status tiles are informational, not checkboxes.
   - **Risk**: A first-time user cannot discover where to enter a key and sees a disabled Start action without a clear setup path, particularly in a short VM window.
-  - **Proposed Fix**: Applied a dedicated setup view with the password input and Connect & test action first, automatic status labels below, and a compact setup footer. Keep the task composer hidden until setup is ready and Settings is closed; retain its draft while switching views. Use the available viewport height instead of a separate fixed minimum card height.
+  - **Proposed Fix**: Put the password input and Connect & test action first, with automatic status labels below, and use the available viewport height. The initial setup-only view was replaced by the separate Settings dialog in FINDING-CHAT-001 so task entry stays discoverable.
 
 - [x] **FINDING-PRELOAD-001 [High] [Sandboxed preload output]**:
   - **Issue**: The approved floating-window implementation initially made the multi-entry build emit a shared `out/preload/chunks/channels-*.cjs` and local chunk imports. Electron sandboxed preloads cannot require these generated local modules.
@@ -43,11 +48,17 @@ No authentication flow, encryption implementation, API middleware, backup system
 
 ## Remediation Plan
 
+- [x] **FIX-CHAT-001 [Task discovery]**:
+  - **Change**: Add a connection dialog within the environment feature; keep the chat composer present while idle; route an unready send attempt to Settings; show user/agent messages and progress without repeating the full goal in the progress card. Connection does not auto-launch a task. Existing readiness, both consent checks, single-run ownership, per-action approval, and Stop behavior remain enforced.
+  - **Rollback**: Revert the bounded chat/header/composer/progress renderer changes and remove `ConnectionDialog.tsx`. No main-process, credential, input-driver, dependency, or database changes are required.
+  - **Validation**: `npm run check` passes: 87 tests, both TypeScript targets, ESLint, production bundles, and standalone sandboxed preloads. Nine additional server-rendering checks cover visible task entry before connection, loading, ready, disconnected preview, open/closed Settings content, pending connection, active conversation, and recovery. These checks do not simulate native typing, focus, or button clicks. No API request was made.
+- [ ] **FIX-CHAT-LIVE-001 [Xubuntu acceptance]**: Type a task before setup, open Settings, enter/test a key locally, close Settings with Back to chat and Escape, and verify the task/consent draft remains. Confirm empty goals and missing consent cannot launch, connection alone never launches, submitted text appears in the conversation, and Stop remains reachable during a run. Validate at the user's usual VM window size.
+
 - [x] **FIX-CONNECTION-001 [First-run connection UI]**:
-  - **Change**: Update only the renderer app layout, task/setup view selection, and connection form presentation. Keep browser previews disconnected and setup editing unavailable during an active run.
+  - **Change**: Update only the renderer app layout and connection form presentation. FINDING-CHAT-001 moves setup to a separate dialog. Keep browser previews disconnected and setup editing unavailable during an active run.
   - **Rollback**: Revert the changes to `src/renderer/src/app/App.tsx`, `src/renderer/src/features/chat/AgentChatView.tsx`, and `src/renderer/src/features/environment/ConnectionSetup.tsx`. No credential or user-data migration is involved.
   - **Validation**: `npm run check` passes with 87 tests, TypeScript, ESLint, production bundles, and both sandboxed preload gates. Local server-rendering assertions pass for initial setup, loading, ready, connection testing, disconnected preview, rejected key, and active-run controls. These are render-state checks, not interactive native UI acceptance. No API credits were used.
-- [ ] **FIX-CONNECTION-LIVE-001 [Xubuntu acceptance]**: In the user's VM, verify that the password field and Connect & test button are reachable at the normal window size, enter a real key locally, confirm a failed test permits retry, confirm success reveals task entry, and confirm Settings preserves a typed task draft. No browser/native UI surface is available to this assistant for interactive verification.
+- [ ] **FIX-CONNECTION-LIVE-001 [Xubuntu acceptance]**: In the user's VM, verify that the Settings dialog's password field and Connect & test button are reachable at the normal window size, enter a real key locally, confirm a failed test permits retry, and confirm success enables task submission after both consents. Task entry remains visible before connection. No browser/native UI surface is available to this assistant for interactive verification.
 
 - [x] **FIX-PRELOAD-001 [Sandboxed preload output]**:
   - **Change**: Keep both preloads standalone and add `scripts/check-preloads.mjs` to `npm run check`. The controls preload exposes only matching-run pause/resume/stop, minimal state subscription, and task-window return.

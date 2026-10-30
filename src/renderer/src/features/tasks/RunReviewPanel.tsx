@@ -8,11 +8,10 @@ export function RunReviewPanel({ runtime }: { runtime: TaskRuntimeView }) {
   return (
     <section aria-label="Current task" className="space-y-4 rounded-2xl border border-slate-700 bg-slate-900/60 p-5">
       <div className="flex items-start justify-between gap-4">
-        <div><p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">Your task</p>
-          <h2 className="mt-2 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed">{task.goal}</h2></div>
+        <div><p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300">Task progress</p>
+          <h2 role="status" className="mt-2 text-sm font-medium text-indigo-200">{statusLabels[task.status]}</h2></div>
         <span className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-[11px] text-slate-300">{completed}/{task.maxSteps} actions</span>
       </div>
-      <p role="status" className="text-xs font-medium text-indigo-200">{statusLabels[task.status]}</p>
       {task.messages.filter(item => item.sender === 'user').length > 1 && <details className="text-xs text-slate-400">
         <summary className="cursor-pointer">Your clarifications</summary>
         {task.messages.filter(item => item.sender === 'user').slice(1).map(item => <p key={item.id} className="mt-2 whitespace-pre-wrap break-words">{item.content}</p>)}

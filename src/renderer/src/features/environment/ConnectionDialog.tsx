@@ -1,0 +1,36 @@
+import { useEffect, useRef } from 'react';
+import { ArrowLeft } from 'lucide-react';
+import type { TaskRuntimeView } from '../tasks/useTaskRuntime';
+import { ConnectionSetup } from './ConnectionSetup';
+
+interface ConnectionDialogProps {
+  open: boolean;
+  runtime: TaskRuntimeView;
+  onClose: () => void;
+}
+
+export function ConnectionDialog({ open, runtime, onClose }: ConnectionDialogProps) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    if (open && !element.open) element.showModal();
+    else if (!open && element.open) element.close();
+  }, [open]);
+
+  return (
+    <dialog ref={dialog} aria-labelledby="connection-dialog-title" onCancel={event => { event.preventDefault(); onClose(); }}
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4 text-slate-100 shadow-2xl backdrop:bg-slate-950/80 backdrop:backdrop-blur-sm sm:p-6">
+      {open && <>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 id="connection-dialog-title" className="text-sm font-semibold">Connection settings</h2>
+          <button type="button" onClick={onClose} className="flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs">
+            <ArrowLeft className="h-3.5 w-3.5" />Back to chat
+          </button>
+        </div>
+        <ConnectionSetup runtime={runtime} />
+        <p className="mt-4 text-xs leading-relaxed text-slate-400">Your task draft stays in the chat. Return there when setup is complete; connecting will not start a task.</p>
+      </>}
+    </dialog>
+  );
+}
