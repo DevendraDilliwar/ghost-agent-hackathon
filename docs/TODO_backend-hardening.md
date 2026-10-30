@@ -11,6 +11,11 @@ Status: initial repository inventory, 2026-10-29, retained as a historical basel
 
 ## Audit Findings
 
+- [x] **FINDING-KEYLOOP-001 [Medium] [Connection versus desktop readiness]**:
+  - **Issue**: The user reported repeated key prompts in the same app session and confirmed Meta text API was Ready/Test configured key. `TaskComposer` originally routed every `!ready` submit to API Settings, while `ready` combined model verification, desktop support, and Emergency Stop. `ConnectionSetup` always displayed an API-key entry form, including when the main-process connection was already verified. Server-rendering reproduces the misleading prompt with a verified model and a failing desktop check. The user's specific desktop failure has not been observed directly.
+  - **Risk**: A non-credential blocker is presented as a need to enter or test the key again, creating a repeated setup path and potentially unnecessary text-test requests.
+  - **Proposed Fix**: Separate model readiness from aggregate task readiness in the composer. For a verified key, show the actual desktop issues and a Recheck desktop action, keep execution blocked until prerequisites pass, and do not route Send back to key entry. Settings shows the retained connection by default, offers an explicit Change API key action, and lets a configured but unverified key be tested without re-entry.
+
 - [x] **FINDING-CHAT-001 [Medium] [Task discovery]**:
   - **Issue**: The user reported that there is no obvious chat-style place to give a task. The first connection-layout correction set `setupVisible` whenever readiness was false and hid the task composer, so a new user could not write a task before connecting Meta.
   - **Risk**: Setup replaces the app's primary task interaction and makes the product appear to be only a connection checklist.
@@ -37,6 +42,8 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 
 ## Verified OK (No Action)
 
+- [x] **OK-KEYREUSE-001** Main-process session key lifetime is already independent of task lifetime. New integration tests verify one connection probe supports successive completed tasks, task failure/Stop do not clear verification, and desktop rechecks recover without another API probe. Metadata never returns the key. Preserve this implementation; no credential persistence, main-process restart workaround, or relaxed desktop checks are justified by this UI finding.
+
 - [x] **OK-CONNECTION-001** The existing named IPC key submission, session-only main-process key handling, immediate password-field clearing, text-only connection probe, and backend readiness enforcement already support in-app connection. Preserve these behaviors; no new secret persistence, model request, desktop action, or broader approval mode is required for this UI correction.
 
 - [x] **OK-UX-001** Preserve context isolation, sandboxing, blocked navigation/new windows/webviews, default-denied permissions, and strict sender/main-frame/URL checks in both windows. Keep action-by-action approval; this tranche does not add autonomous execution or a hosted backend/database.
@@ -47,6 +54,12 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 No authentication flow, encryption implementation, API middleware, backup system, or production monitoring has been verified as adequate. Absence of code is not a passed quality check.
 
 ## Remediation Plan
+
+- [x] **FIX-KEYLOOP-001 [Connection versus desktop readiness]**:
+  - **Change**: Update only the connection panel, chat blocker message, and task-submit routing. Add three runtime integration regressions covering key reuse and independent desktop readiness. No provider requests, stored credentials, or input actions are performed by these tests.
+  - **Rollback**: Revert the three renderer changes and remove `src/main/runtime/create-task-runtime.test.ts`; retain the previous source/artifact. No user-data migration is involved.
+  - **Validation**: `npm run check` passes with 90 tests in 10 files, TypeScript, ESLint, production bundles, and standalone sandboxed preloads. Eight server-rendering checks cover verified/configured/missing keys, desktop/Stop blockers, ready submission, rejected probes, and disconnected previews. Interactive native acceptance remains pending.
+- [ ] **FIX-KEYLOOP-LIVE-001 [Xubuntu acceptance]**: Verify a connected key appears as connected without an entry field; inspect the actual desktop or Stop issue shown in chat if task readiness is blocked; resolve that issue and Recheck desktop. Complete two tasks in the same app session without re-entering or retesting the key. This does not change the documented session-only behavior after app exit.
 
 - [x] **FIX-CHAT-001 [Task discovery]**:
   - **Change**: Add a connection dialog within the environment feature; keep the chat composer present while idle; route an unready send attempt to Settings; show user/agent messages and progress without repeating the full goal in the progress card. Connection does not auto-launch a task. Existing readiness, both consent checks, single-run ownership, per-action approval, and Stop behavior remain enforced.

@@ -16,7 +16,8 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const task = runtime.snapshot;
   const status = task?.status ?? 'idle';
   const active = isActiveTask(status);
-  const ready = runtime.connected && runtime.readiness?.ready === true;
+  const modelReady = runtime.connection?.verified === true;
+  const ready = runtime.connected && modelReady && runtime.readiness?.ready === true;
   const history = task?.actions.filter(action => action.status !== 'awaiting_approval') ?? [];
   const pending = task?.actions.filter(action => action.status === 'awaiting_approval') ?? [];
 
@@ -26,8 +27,11 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
         {!runtime.connected && <p className="rounded-xl border border-amber-500/30 p-3 text-xs leading-relaxed text-amber-200">Browser layout preview. Open the installed desktop app to connect Meta and operate your test desktop.</p>}
         {runtime.connected && !ready && !active && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-500/30 bg-indigo-950/30 p-3">
-          <p className="text-xs leading-relaxed text-slate-300">Write your task below. Complete connection setup before Ghost Agent can run it.</p>
-          <button type="button" onClick={() => setShowSetup(true)} className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold">Set up connection</button>
+          <div className="space-y-2 text-xs leading-relaxed text-slate-300">
+            <p>{modelReady ? 'Meta is connected. Complete the desktop checks below before running a task; your API key does not need to be entered again.' : 'Write your task below. Complete connection setup before Ghost Agent can run it.'}</p>
+            {modelReady && runtime.readiness && runtime.readiness.issues.length > 0 && <ul className="list-disc space-y-1 pl-4 text-amber-200">{runtime.readiness.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
+          </div>
+          <button type="button" onClick={modelReady ? runtime.refresh : () => setShowSetup(true)} className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold">{modelReady ? 'Recheck desktop' : 'Set up connection'}</button>
         </div>}
         {runtime.error && <p role="alert" className="rounded-xl border border-rose-500/30 p-3 text-xs text-rose-300">{runtime.error}</p>}
         <MessageFeed messages={task?.messages ?? []} />
@@ -45,7 +49,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
       </div>
       <footer className="max-h-[60dvh] shrink-0 overflow-y-auto border-t border-slate-800/80 bg-slate-950/60 p-4 sm:p-5">
         {active && <RunControls status={status} disabled={runtime.pending} onPause={runtime.pause} onResume={runtime.resume} onStop={runtime.stop} onTakeOver={runtime.takeOver} />}
-        {!active && <TaskComposer key={task?.runId ?? 'new'} initialGoal={task?.goal ?? ''} initialLimit={task?.maxSteps ?? 15} busy={runtime.pending} connected={runtime.connected} ready={ready} onOpenSetup={() => setShowSetup(true)} onLaunch={runtime.launch} />}
+        {!active && <TaskComposer key={task?.runId ?? 'new'} initialGoal={task?.goal ?? ''} initialLimit={task?.maxSteps ?? 15} busy={runtime.pending} connected={runtime.connected} modelReady={modelReady} ready={ready} onOpenSetup={() => setShowSetup(true)} onLaunch={runtime.launch} />}
       </footer>
       <ConnectionDialog open={showSetup && !active} runtime={runtime} onClose={() => setShowSetup(false)} />
     </section>

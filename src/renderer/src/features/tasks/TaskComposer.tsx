@@ -5,6 +5,7 @@ import type { RunConfiguration } from '../../../../shared/contracts/task';
 
 interface TaskComposerProps {
   connected: boolean;
+  modelReady: boolean;
   ready: boolean;
   busy: boolean;
   initialGoal: string;
@@ -13,17 +14,17 @@ interface TaskComposerProps {
   onLaunch: (configuration: RunConfiguration) => void;
 }
 
-export function TaskComposer({ connected, ready, busy, initialGoal, initialLimit, onOpenSetup, onLaunch }: TaskComposerProps) {
+export function TaskComposer({ connected, modelReady, ready, busy, initialGoal, initialLimit, onOpenSetup, onLaunch }: TaskComposerProps) {
   const [goal, setGoal] = useState(initialGoal);
   const [maxSteps, setMaxSteps] = useState(initialLimit);
   const [screenConsent, setScreenConsent] = useState(false);
   const [isolatedEnvironment, setIsolatedEnvironment] = useState(false);
-  const canSubmit = connected && !busy && Boolean(goal.trim()) && (!ready || (screenConsent && isolatedEnvironment));
+  const canSubmit = connected && !busy && Boolean(goal.trim()) && (!modelReady || (ready && screenConsent && isolatedEnvironment));
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!canSubmit) return;
-    if (!ready) { onOpenSetup(); return; }
+    if (!modelReady) { onOpenSetup(); return; }
     onLaunch({ goal: goal.trim(), maxSteps, approvalMode: 'ask_approval', screenConsent, isolatedEnvironment });
   }
   function keyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -39,11 +40,11 @@ export function TaskComposer({ connected, ready, busy, initialGoal, initialLimit
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
           <span className="text-[11px] text-slate-400">Enter to send · Shift + Enter for a new line</span>
           <button type="submit" disabled={!canSubmit} className="flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40">
-            {busy ? 'Please wait…' : !connected ? 'Desktop app required' : !ready ? 'Set up & continue' : 'Send task'}<Send className="h-4 w-4" />
+            {busy ? 'Please wait…' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : 'Send task'}<Send className="h-4 w-4" />
           </button>
         </div>
       </div>
-      <p id="task-entry-help" className="text-[11px] leading-relaxed text-slate-400">{!connected ? 'You can write a draft here. Open the desktop app to run it.' : !ready ? 'You can write your task now. Set up & continue opens connection settings and keeps your draft.' : 'Select both permissions below, then send your task. You will review each proposed action.'}</p>
+      <p id="task-entry-help" className="text-[11px] leading-relaxed text-slate-400">{!connected ? 'You can write a draft here. Open the desktop app to run it.' : !modelReady ? 'You can write your task now. Set up & continue opens connection settings and keeps your draft.' : !ready ? 'Your API key is connected. Resolve the desktop check shown above, then choose Recheck desktop.' : 'Select both permissions below, then send your task. You will review each proposed action.'}</p>
       <div className="space-y-2 text-xs leading-relaxed text-slate-400">
         <label className="flex items-start gap-2"><input type="checkbox" checked={screenConsent} onChange={event => setScreenConsent(event.target.checked)} disabled={busy} className="mt-0.5" />
           <span>Allow Meta to process my task and desktop screenshots for this run. Keep private content off screen.</span></label>
