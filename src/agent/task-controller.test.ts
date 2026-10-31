@@ -411,9 +411,27 @@ describe('task lifecycle', () => {
     await flush();
     expect(model.verifyText).toHaveBeenCalledTimes(2);
     expect(model.decide).toHaveBeenCalledTimes(2);
-    expect(model.decide.mock.calls[1]?.[0].history).toContain('The typed value is not visible on screen. Re-check focus and the target field before typing again.');
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, then type again.');
     expect(controller.getSnapshot().status).toBe('needs_user');
     expect(controller.getSnapshot().handoff?.kind).toBe('manual');
+  });
+
+  it('tells the model what the last step did before the next decision', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
+    model.verifyText.mockResolvedValue({ confirmed: false, detail: 'No text field visible.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    await flush();
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('Last step result: PRISM: typed value not visible on screen.');
+  });
+
+  it('tells the model to back out instead of repeating a stalled action', async () => {
+    const { controller, model } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    await flush();
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('The last action caused no visible change. Do not repeat it unchanged - back out or try a different target.');
   });
 
   it('hands to the user after two consecutive stalls', async () => {

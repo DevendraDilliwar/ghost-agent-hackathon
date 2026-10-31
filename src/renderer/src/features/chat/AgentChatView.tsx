@@ -19,7 +19,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('full_access');
   const [screenConsent, setScreenConsent] = useState(true);
   const [isolatedEnvironment, setIsolatedEnvironment] = useState(true);
-  const [maxSteps, setMaxSteps] = useState(15);
+  const maxSteps = 15;
   const task = runtime.snapshot;
   const status = task?.status ?? 'idle';
   const active = isActiveTask(status);
@@ -168,8 +168,6 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
           setScreenConsent={setScreenConsent}
           isolatedEnvironment={isolatedEnvironment}
           setIsolatedEnvironment={setIsolatedEnvironment}
-          maxSteps={maxSteps}
-          setMaxSteps={setMaxSteps}
           onClose={() => setShowSetup(false)}
         />
       )}

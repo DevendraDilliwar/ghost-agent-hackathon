@@ -199,11 +199,11 @@ export class TaskController {
             verification = { ...delta, status: 'verified_success', summary: 'PRISM: typed value confirmed on screen (+' + delta.visualDeltaPercent + '% screen delta).', verifiedAt: Date.now() };
           } else {
             progressed = false;
-            progressNote = 'The typed value is not visible on screen. Re-check focus and the target field before typing again.';
+            progressNote = 'The last type failed (' + check.detail.slice(0, 200) + '). Do not repeat it unchanged - back out (Escape), re-check focus, then type again.';
             verification = { status: 'human_intervention_needed', visualDeltaPercent: delta.visualDeltaPercent, summary: 'PRISM: typed value not visible on screen.', recoverySuggestion: check.detail, verifiedAt: Date.now() };
           }
         } else if (!progressed) {
-          progressNote = 'The last action caused no visible change. Try a different approach.';
+          progressNote = 'The last action caused no visible change. Do not repeat it unchanged - back out or try a different target.';
         }
         const last = this.state.actions.at(-1);
         this.state = {
@@ -230,6 +230,8 @@ export class TaskController {
       const history = this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
         .map(action => action.status + ': ' + action.description);
       history.push(...this.clarifications.map(answer => 'User clarification: ' + answer));
+      const lastVerification = this.state.actions.at(-1)?.verification;
+      if (lastVerification) history.push('Last step result: ' + lastVerification.summary);
       if (progressNote) history.push(progressNote);
       const decision = await this.dependencies.model.decide({
         goal: this.state.goal, observation, history, signal,

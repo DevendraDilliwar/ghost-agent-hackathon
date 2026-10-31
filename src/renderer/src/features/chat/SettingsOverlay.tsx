@@ -12,8 +12,6 @@ interface SettingsOverlayProps {
   setScreenConsent: (value: boolean) => void;
   isolatedEnvironment: boolean;
   setIsolatedEnvironment: (value: boolean) => void;
-  maxSteps: number;
-  setMaxSteps: (value: number) => void;
   onClose: () => void;
 }
 
@@ -22,7 +20,6 @@ export function SettingsOverlay({
   approvalMode, setApprovalMode,
   screenConsent, setScreenConsent,
   isolatedEnvironment, setIsolatedEnvironment,
-  maxSteps, setMaxSteps,
   onClose,
 }: SettingsOverlayProps) {
   return (
@@ -101,19 +98,6 @@ export function SettingsOverlay({
                 Running on verified test desktop environment
               </span>
             </label>
-          </div>
-          <div className="mt-2 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <span className="text-[11px] text-slate-600">Maximum autonomous actions:</span>
-            <select
-              id="default-action-limit"
-              value={maxSteps}
-              onChange={event => setMaxSteps(Number(event.target.value))}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 outline-none"
-            >
-              {[5, 10, 15, 20, 30].map(value => (
-                <option key={value} value={value}>{value} actions</option>
-              ))}
-            </select>
           </div>
         </section>
         <section aria-label="Safety" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
