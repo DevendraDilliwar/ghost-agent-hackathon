@@ -50,19 +50,19 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, onOpenS
         </div>
       </div>
 
-      {/* Model Engine Pills (The 5 Models Indicator) */}
+      {/* Agent loop role pills */}
       <div className="hidden lg:flex items-center gap-2 text-[10px] font-mono">
-        <div className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-950/30 px-2.5 py-1 text-sky-300" title="SAM 3.1: Visual UI Grounding & Element Segmentation">
+        <div className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-950/30 px-2.5 py-1 text-sky-300" title="Observe: fresh screenshot of the selected desktop before every step">
           <Eye className="h-3 w-3 text-sky-400" />
-          <span>SAM 3.1 Eyes</span>
+          <span>Observe</span>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-950/30 px-2.5 py-1 text-violet-300" title="Muse Spark: Strategic Task Planning">
+        <div className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-950/30 px-2.5 py-1 text-violet-300" title="Think: one Meta model parses intent and proposes the next action">
           <Sparkles className="h-3 w-3 text-violet-400" />
-          <span>Muse Spark Brain</span>
+          <span>Think</span>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-950/30 px-2.5 py-1 text-emerald-300" title="Muse Wonder: PRISM Visual Verification">
+        <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-950/30 px-2.5 py-1 text-emerald-300" title="Verify: screen-delta check plus typed-value readback (PRISM)">
           <ShieldCheck className="h-3 w-3 text-emerald-400" />
-          <span>Wonder PRISM</span>
+          <span>Verify</span>
         </div>
       </div>
 

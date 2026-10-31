@@ -1,6 +1,15 @@
 # Demo, evaluation, and hackathon submission
 
-Status: proposed plan; no recorded demo, benchmark, or submission exists. Updated 2026-10-29.
+Status: Tally-sim demo frozen (see demo/legacy-accounting/DEMO_SCRIPT.md); no recorded video, benchmark, or submission yet. Updated 2026-10-31.
+
+## Frozen demo decision (Phase 4)
+
+The browser/terminal setup-task proposal below (DEMO-001..005) is superseded for
+this hackathon entry. The frozen demo is the Tally voucher-entry fixture:
+fixed goal, fixed starting state, and a results log live in
+demo/legacy-accounting/DEMO_SCRIPT.md. Evaluation is reduced to 3 clean runs
+of the frozen task with every attempt recorded; the 10-run protocol below
+remains the future bar, not the current claim.
 
 ## The story
 

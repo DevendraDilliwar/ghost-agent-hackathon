@@ -38,7 +38,7 @@ export function RunReviewPanel({ runtime }: { runtime: TaskRuntimeView }) {
         <details open={task.awaitingCompletion || task.status === 'awaiting_approval' || Boolean(pendingAction)} className="space-y-2">
           <summary className="cursor-pointer text-xs font-semibold text-sky-400 flex items-center gap-1.5 hover:text-sky-300">
             <Eye className="h-3.5 w-3.5" />
-            <span>{task.awaitingCompletion ? 'Verify Final Desktop State' : 'SAM 3.1 Live Grounded Screen'}</span>
+            <span>{task.awaitingCompletion ? 'Verify Final Desktop State' : 'Live Desktop Screen'}</span>
           </summary>
           <div className="mt-2.5">
             <VisualGroundingOverlay

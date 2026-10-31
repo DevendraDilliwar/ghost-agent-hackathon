@@ -53,7 +53,7 @@ export function VisualGroundingOverlay({
           className="w-full object-contain select-none"
         />
 
-        {/* SAM 3.1 Grounded Bounding Boxes SVG Overlay */}
+        {/* Grounded Bounding Boxes SVG Overlay */}
         {showBoxes && elements.length > 0 && (
           <svg
             className="absolute inset-0 pointer-events-none h-full w-full"
@@ -177,7 +177,9 @@ export function VisualGroundingOverlay({
           <span>
             {selectedTag
               ? `Selected Tag #${selectedTag}: ${elements.find(e => e.id === selectedTag)?.label ?? 'Interactive element'}`
-              : 'SAM 3.1 Grounding: Spatial Precision Mode Active (Click any box to inspect)'}
+              : elements.length > 0
+                ? 'Grounded tags active (Click any box to inspect)'
+                : 'No grounded tags - acting on model coordinates'}
           </span>
         </span>
         {targetCoordinates && (

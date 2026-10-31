@@ -5,7 +5,7 @@ import type { RunConfiguration } from '../../shared/contracts/task';
 import { createTaskRuntime } from './create-task-runtime';
 
 const stubs = vi.hoisted(() => ({
-  preflight: vi.fn(), capture: vi.fn(), execute: vi.fn(), decide: vi.fn(),
+  preflight: vi.fn(), capture: vi.fn(), execute: vi.fn(), decide: vi.fn(), parseIntent: vi.fn(), verifyText: vi.fn(),
   probe: vi.fn(), modelOptions: vi.fn(), register: vi.fn(), unregister: vi.fn(), isRegistered: vi.fn(),
 }));
 vi.mock('electron', () => ({ globalShortcut: { register: stubs.register, unregister: stubs.unregister, isRegistered: stubs.isRegistered } }));
@@ -18,6 +18,8 @@ vi.mock('../../providers/meta/meta-request', () => ({ testMetaConnection: stubs.
 vi.mock('../../providers/meta/meta-computer-model', () => ({ MetaComputerModel: class {
   constructor(options: unknown) { stubs.modelOptions(options); }
   decide = stubs.decide;
+  parseIntent = stubs.parseIntent;
+  verifyText = stubs.verifyText;
 } }));
 
 const runtimes: ReturnType<typeof createTaskRuntime>[] = [];
@@ -40,6 +42,8 @@ beforeEach(() => {
   stubs.capture.mockResolvedValue({ image: 'data:image/png;base64,dGVzdA==', width: 800, height: 600,
     desktopWidth: 800, desktopHeight: 600, activeWindowId: '100', capturedAt: Date.now() });
   stubs.decide.mockResolvedValue(finished);
+  stubs.parseIntent.mockResolvedValue({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 1, outputTokens: 1 });
+  stubs.verifyText.mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 1, outputTokens: 1 });
 });
 
 describe('emergency Stop registration and task readiness', () => {
@@ -169,7 +173,8 @@ describe('model connection across tasks in one app session', () => {
       expect(runtime.connection.info()).toMatchObject({ configured: true, verified: true, source: 'session' });
     }
     expect(stubs.probe).toHaveBeenCalledTimes(1);
-    expect(stubs.modelOptions).toHaveBeenCalledTimes(2);
+    // One parseIntent + one decide call per task, each constructing a model instance.
+    expect(stubs.modelOptions).toHaveBeenCalledTimes(4);
     expect(stubs.modelOptions.mock.calls.every(([options]) => options.apiKey === 'fake-session-key')).toBe(true);
     expect(JSON.stringify(runtime.connection.info())).not.toContain('fake-session-key');
   });

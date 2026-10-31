@@ -22,18 +22,21 @@ function deferred<T>() {
 }
 
 async function flush() {
-  for (let i = 0; i < 15; i++) await Promise.resolve();
+  for (let i = 0; i < 30; i++) await Promise.resolve();
 }
 
-function setup() {
+function setup(overrides?: Partial<import('./task-controller').ControllerDependencies>) {
   let id = 0;
   const desktop = { preflight: vi.fn().mockResolvedValue(undefined), capture: vi.fn().mockResolvedValue(frame), execute: vi.fn().mockResolvedValue(undefined) };
-  const model = { decide: vi.fn().mockResolvedValue(proposed) };
+  const model = { decide: vi.fn().mockResolvedValue(proposed),
+    parseIntent: vi.fn().mockResolvedValue({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 10, outputTokens: 5 }),
+    verifyText: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 }) };
   const changed = vi.fn();
   const clock = { now: 1000 };
   const controller = new TaskController({
     desktop, model, id: () => 'id-' + ++id, describe: () => 'Click the test target',
     validateAction: action => action as NonNullable<ModelDecision['action']>, changed, now: () => clock.now,
+    ...overrides,
   });
   controllers.push(controller);
   return { controller, desktop, model, clock, changed };
@@ -300,6 +303,157 @@ describe('task lifecycle', () => {
     expect(() => controller.resume(run.runId!, 'Another answer')).toThrow('after five questions');
     expect(desktop.capture).toHaveBeenCalledTimes(6);
     expect(controller.getSnapshot().status).toBe('needs_user');
+  });
+
+  it('does not send grounding tags to the model when the detector returns none', async () => {
+    const { controller, model } = setup();
+    controller.start(configuration);
+    await flush();
+    expect(model.decide).toHaveBeenCalled();
+    expect(model.decide.mock.calls[0]?.[0].grounding).toBeUndefined();
+    expect(controller.getSnapshot().groundedElements).toEqual([]);
+  });
+
+  it('forwards grounding tags to the model when a detector provides them', async () => {
+    const detected = {
+      elements: [{
+        id: 1, type: 'button' as const, label: 'Save',
+        bounds: { x: 100, y: 200, width: 140, height: 36 },
+        center: { x: 170, y: 218 }, confidence: 0.95,
+      }],
+      totalElements: 1, processedAt: 0,
+    };
+    const { controller, model } = setup({ grounding: { groundScreen: () => detected } });
+    controller.start(configuration);
+    await flush();
+    expect(model.decide.mock.calls[0]?.[0].grounding).toBe(detected);
+    expect(controller.getSnapshot().groundedElements).toEqual(detected.elements);
+  });
+
+  it('parses intent before the first capture and waits for it', async () => {
+    const { controller, desktop, model } = setup();
+    let resolve!: (value: unknown) => void;
+    model.parseIntent.mockReturnValueOnce(new Promise<unknown>(done => { resolve = done; }));
+    controller.start(configuration);
+    await flush();
+    expect(model.parseIntent).toHaveBeenCalledTimes(1);
+    expect(desktop.capture).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().status).toBe('preparing');
+    resolve({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 10, outputTokens: 5 });
+    await flush();
+    expect(desktop.capture).toHaveBeenCalled();
+  });
+
+  it('asks for missing values before touching the desktop', async () => {
+    const { controller, desktop, model } = setup();
+    model.parseIntent.mockResolvedValueOnce({ intent: { summary: 'Enter the voucher', params: { date: '12-10-2026' }, missing: ['amount'] }, inputTokens: 10, outputTokens: 5 });
+    controller.start(configuration);
+    await flush();
+    expect(controller.getSnapshot().status).toBe('needs_user');
+    expect(controller.getSnapshot().handoff?.kind).toBe('clarification');
+    expect(controller.getSnapshot().intent).toBeNull();
+    expect(desktop.capture).not.toHaveBeenCalled();
+    expect(model.decide).not.toHaveBeenCalled();
+  });
+
+  it('re-parses with the clarification answer and then observes', async () => {
+    const { controller, desktop, model } = setup();
+    model.parseIntent.mockResolvedValueOnce({ intent: { summary: 'Enter the voucher', params: {}, missing: ['amount'] }, inputTokens: 10, outputTokens: 5 });
+    const run = controller.start(configuration);
+    await flush();
+    controller.resume(run.runId!, '25000');
+    await flush();
+    expect(model.parseIntent).toHaveBeenCalledTimes(2);
+    expect(model.parseIntent.mock.calls[1]?.[0].clarifications).toEqual(['25000']);
+    expect(desktop.capture).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().intent).toMatchObject({ summary: 'Test goal' });
+  });
+
+  it('fails before any capture when intent parsing exhausts the token allowance', async () => {
+    const { controller, desktop, model } = setup();
+    model.parseIntent.mockResolvedValueOnce({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 100, outputTokens: 9000 });
+    controller.start(configuration);
+    await flush();
+    expect(controller.getSnapshot().status).toBe('failed');
+    expect(controller.getSnapshot().message).toContain('token allowance');
+    expect(desktop.capture).not.toHaveBeenCalled();
+  });
+
+  it('verifies typed text after a type action and continues on confirmation', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '25000' } });
+    const run = controller.start(configuration);
+    await flush();
+    controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
+    await flush();
+    expect(model.verifyText).toHaveBeenCalledTimes(1);
+    expect(model.verifyText.mock.calls[0]?.[0].text).toBe('25000');
+    expect(controller.getSnapshot().actions[0]?.verification?.status).toBe('verified_success');
+  });
+
+  it('does not verify non-type actions', async () => {
+    const { controller, model } = setup();
+    const run = controller.start(configuration);
+    await flush();
+    controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
+    await flush();
+    expect(model.verifyText).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().actions[0]?.verification?.status).toBe('stalled_no_change');
+    expect(controller.getSnapshot().status).toBe('awaiting_approval');
+  });
+
+  it('retries once with a note on mismatch, then hands to the user', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
+    model.verifyText.mockResolvedValue({ confirmed: false, detail: 'No text field visible.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    await flush();
+    expect(model.verifyText).toHaveBeenCalledTimes(2);
+    expect(model.decide).toHaveBeenCalledTimes(2);
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('The typed value is not visible on screen. Re-check focus and the target field before typing again.');
+    expect(controller.getSnapshot().status).toBe('needs_user');
+    expect(controller.getSnapshot().handoff?.kind).toBe('manual');
+  });
+
+  it('hands to the user after two consecutive stalls', async () => {
+    const { controller, model } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    await flush();
+    expect(model.verifyText).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().status).toBe('needs_user');
+    expect(controller.getSnapshot().handoff?.kind).toBe('manual');
+  });
+
+  it('resets the no-progress streak after verified progress', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
+    model.verifyText
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Not visible.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValueOnce({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Not visible.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Still not visible.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 6 });
+    await flush();
+    await flush();
+    await flush();
+    expect(model.verifyText).toHaveBeenCalledTimes(4);
+    expect(model.decide).toHaveBeenCalledTimes(4);
+    expect(controller.getSnapshot().status).toBe('needs_user');
+  });
+
+  it('fails the run when verification errors', async () => {
+    const { controller, desktop, model } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '25000' } });
+    model.verifyText.mockRejectedValueOnce(new Error('Meta could not verify the screen.'));
+    const run = controller.start(configuration);
+    await flush();
+    controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
+    await flush();
+    expect(controller.getSnapshot().status).toBe('failed');
+    expect(controller.getSnapshot().message).toContain('could not verify');
+    expect(desktop.execute).toHaveBeenCalledTimes(1);
   });
 
 });

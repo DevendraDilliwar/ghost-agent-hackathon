@@ -60,6 +60,12 @@ export interface UserHandoff {
   readonly reason: string;
 }
 
+export interface ParsedIntent {
+  summary: string;
+  params: Record<string, string>;
+  missing: string[];
+}
+
 export interface TaskSnapshot {
   runId: string | null;
   revision: number;
@@ -75,5 +81,6 @@ export interface TaskSnapshot {
   handoff: UserHandoff | null;
   inputTokens: number;
   outputTokens: number;
+  intent: ParsedIntent | null;
   groundedElements?: import('./grounding').GroundedElement[];
 }

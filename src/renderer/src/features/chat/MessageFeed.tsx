@@ -20,7 +20,7 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
         </h2>
         
         <p className="mt-2.5 max-w-md text-xs leading-relaxed text-slate-400">
-          No API required. From legacy ERPs & Tally to desktop browsers, NoMCP sees your screen, plans actions, and operates your PC with visual verification.
+          No per-app API integrations. From legacy ERPs & Tally to desktop browsers, NoMCP sees your screen, plans actions, and operates your PC with visual verification.
         </p>
 
         {/* 3 Pillar Cards */}
@@ -29,9 +29,9 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-400">
               <Eye className="h-4 w-4" />
             </div>
-            <h3 className="text-xs font-bold text-slate-200">SAM 3.1 Eyes</h3>
+            <h3 className="text-xs font-bold text-slate-200">Vision Observe</h3>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-              Grounds UI buttons, fields & menus on any screen without coordinates guessing.
+              Reads the selected desktop through a fresh screenshot before every step.
             </p>
           </div>
 
@@ -39,7 +39,7 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
               <ShieldCheck className="h-4 w-4" />
             </div>
-            <h3 className="text-xs font-bold text-slate-200">Wonder PRISM</h3>
+            <h3 className="text-xs font-bold text-slate-200">PRISM Verify</h3>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
               Compares before & after screenshots to verify if action succeeded or error appeared.
             </p>

@@ -46,7 +46,13 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   let shortcut: typeof emergencyShortcuts[number] | null = null;
   let disposed = false;
   const controller = new TaskController({
-    desktop, model: { decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input) }, id: randomUUID,
+    desktop,
+    model: {
+      decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input),
+      parseIntent: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).parseIntent(input),
+      verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).verifyText(input),
+    },
+    id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand,
     changed: snapshot => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(IPC_CHANNELS.taskChanged, snapshot);

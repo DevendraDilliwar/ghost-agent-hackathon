@@ -16,6 +16,19 @@ export interface ModelDecision {
   readonly handoff?: UserHandoff;
 }
 
+export interface IntentDecision {
+  readonly intent: import('../shared/contracts/task').ParsedIntent;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
+export interface VerifyDecision {
+  readonly confirmed: boolean;
+  readonly detail: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 export interface ModelPort {
   decide(input: {
     goal: string;
@@ -24,4 +37,14 @@ export interface ModelPort {
     signal: AbortSignal;
     grounding?: import('../shared/contracts/grounding').GroundingResult;
   }): Promise<ModelDecision>;
+  parseIntent(input: {
+    goal: string;
+    clarifications: string[];
+    signal: AbortSignal;
+  }): Promise<IntentDecision>;
+  verifyText(input: {
+    text: string;
+    observation: ScreenObservation;
+    signal: AbortSignal;
+  }): Promise<VerifyDecision>;
 }

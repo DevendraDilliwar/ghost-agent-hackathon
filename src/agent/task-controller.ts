@@ -2,11 +2,13 @@ import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHan
 import type { DesktopPort, ModelPort } from './ports';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
 import { defaultGroundingEngine } from './vision/ui-grounding';
+import type { UIGroundingEngine } from './vision/ui-grounding';
 import { defaultPrismVerifier } from './vision/prism-verifier';
 
-interface ControllerDependencies {
+export interface ControllerDependencies {
   desktop: DesktopPort;
   model: ModelPort;
+  grounding?: Pick<UIGroundingEngine, 'groundScreen'>;
   id: () => string;
   describe: (action: DesktopCommand) => string;
   validateAction: (action: unknown, observation: ScreenObservation) => DesktopCommand;
@@ -20,6 +22,7 @@ export function idleSnapshot(): TaskSnapshot {
     messages: [], screenshot: null, pendingActionId: null, message: 'Ready for a test task.',
     awaitingCompletion: false, handoff: null, inputTokens: 0, outputTokens: 0,
     groundedElements: [],
+    intent: null,
   };
 }
 
@@ -31,6 +34,7 @@ export class TaskController {
   private pending: { action: DesktopCommand; observation: ScreenObservation } | null = null;
   private now: () => number;
   private clarifications: string[] = [];
+  private noProgressStreak = 0;
   private approvalMode: ApprovalMode = 'full_access';
 
   constructor(private readonly dependencies: ControllerDependencies) {
@@ -46,6 +50,7 @@ export class TaskController {
     this.clearDeadline();
     this.pending = null;
     this.clarifications = [];
+    this.noProgressStreak = 0;
     this.approvalMode = configuration.approvalMode ?? 'full_access';
     this.state = {
       ...idleSnapshot(), revision: this.state.revision, runId: this.dependencies.id(), goal: configuration.goal,
@@ -86,6 +91,7 @@ export class TaskController {
       this.state = { ...this.state, messages: [...this.state.messages,
         { id: this.dependencies.id(), sender: 'user', content: 'Clarification: ' + answer.trim(), timestamp: this.timestamp() }] };
     } else if (answer !== undefined && answer !== '') throw new Error('This task is not asking for a text clarification.');
+    this.noProgressStreak = 0;
     this.update({ status: 'observing', handoff: null, screenshot: null, message: 'Resuming from a fresh screen observation.' });
     this.launch();
     return this.getSnapshot();
@@ -158,6 +164,10 @@ export class TaskController {
 
   private async advance(signal: AbortSignal, generation: number, execution?: { action: DesktopCommand; observation: ScreenObservation }): Promise<void> {
     try {
+      if (!this.state.intent) {
+        const ready = await this.ensureIntent(signal, generation);
+        if (!ready || !this.current(generation, signal)) return;
+      }
       await this.dependencies.desktop.preflight(signal);
       if (!this.current(generation, signal)) return;
       if (execution) {
@@ -169,25 +179,62 @@ export class TaskController {
       const observation = await this.dependencies.desktop.capture(signal);
       if (!this.current(generation, signal)) return;
 
+      let progressNote: string | null = null;
       if (execution) {
-        const verdict = defaultPrismVerifier.verifyTransition(execution.observation, observation, execution.action);
+        const delta = defaultPrismVerifier.verifyTransition(execution.observation, observation, execution.action);
+        let verification = delta;
+        let progressed = delta.status !== 'stalled_no_change';
+        if (execution.action.type === 'type') {
+          const check = await this.dependencies.model.verifyText({ text: execution.action.text, observation, signal });
+          if (!this.current(generation, signal)) return;
+          const verifyInputTokens = this.state.inputTokens + check.inputTokens;
+          const verifyOutputTokens = this.state.outputTokens + check.outputTokens;
+          this.state = { ...this.state, inputTokens: verifyInputTokens, outputTokens: verifyOutputTokens };
+          if (verifyInputTokens > 60_000 || verifyOutputTokens > 8_000) {
+            this.fail('The run token allowance was reached. No further actions will be dispatched.');
+            return;
+          }
+          if (check.confirmed) {
+            progressed = true;
+            verification = { ...delta, status: 'verified_success', summary: 'PRISM: typed value confirmed on screen (+' + delta.visualDeltaPercent + '% screen delta).', verifiedAt: Date.now() };
+          } else {
+            progressed = false;
+            progressNote = 'The typed value is not visible on screen. Re-check focus and the target field before typing again.';
+            verification = { status: 'human_intervention_needed', visualDeltaPercent: delta.visualDeltaPercent, summary: 'PRISM: typed value not visible on screen.', recoverySuggestion: check.detail, verifiedAt: Date.now() };
+          }
+        } else if (!progressed) {
+          progressNote = 'The last action caused no visible change. Try a different approach.';
+        }
         const last = this.state.actions.at(-1);
         this.state = {
           ...this.state,
-          actions: this.state.actions.map(action => action.id === last?.id ? { ...action, status: 'executed', verification: verdict } : action),
+          actions: this.state.actions.map(action => action.id === last?.id ? { ...action, status: 'executed', verification } : action),
         };
+        if (progressed) {
+          this.noProgressStreak = 0;
+        } else if (++this.noProgressStreak >= 2) {
+          this.yieldToUser({ kind: 'manual', reason: 'No visible progress after repeated actions. Take control of the desktop, fix the screen, then resume - or stop the run.' });
+          return;
+        }
       }
-      const grounding = defaultGroundingEngine.groundScreen(observation);
+      const engine = this.dependencies.grounding ?? defaultGroundingEngine;
+      const grounding = engine.groundScreen(observation);
       this.update({
         status: 'thinking',
         screenshot: observation.image,
-        message: 'SAM 3.1 grounded ' + grounding.totalElements + ' interactive elements. Asking Meta for the next step.',
+        message: grounding.elements.length
+          ? 'Grounded ' + grounding.totalElements + ' interactive elements. Asking Meta for the next step.'
+          : 'Asking Meta for the next step from the fresh screenshot.',
         groundedElements: grounding.elements,
       });
       const history = this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
         .map(action => action.status + ': ' + action.description);
       history.push(...this.clarifications.map(answer => 'User clarification: ' + answer));
-      const decision = await this.dependencies.model.decide({ goal: this.state.goal, observation, history, signal, grounding });
+      if (progressNote) history.push(progressNote);
+      const decision = await this.dependencies.model.decide({
+        goal: this.state.goal, observation, history, signal,
+        ...(grounding.elements.length ? { grounding } : {}),
+      });
       if (!this.current(generation, signal)) return;
       const inputTokens = this.state.inputTokens + decision.inputTokens;
       const outputTokens = this.state.outputTokens + decision.outputTokens;
@@ -247,6 +294,38 @@ export class TaskController {
         this.fail(error instanceof Error ? error.message : 'The task could not continue.');
       }
     }
+  }
+
+  private async ensureIntent(signal: AbortSignal, generation: number): Promise<boolean> {
+    this.update({ status: 'preparing', message: 'Understanding your goal before touching the desktop.' });
+    const decision = await this.dependencies.model.parseIntent({
+      goal: this.state.goal, clarifications: [...this.clarifications], signal,
+    });
+    if (!this.current(generation, signal)) return false;
+    const inputTokens = this.state.inputTokens + decision.inputTokens;
+    const outputTokens = this.state.outputTokens + decision.outputTokens;
+    this.state = { ...this.state, inputTokens, outputTokens };
+    if (inputTokens > 60_000 || outputTokens > 8_000) {
+      this.fail('The run token allowance was reached. No further actions will be dispatched.');
+      return false;
+    }
+    if (decision.intent.missing.length) {
+      this.yieldToUser({
+        kind: 'clarification',
+        reason: ('Before I touch the desktop, I need: ' + decision.intent.missing.join(', ') + '. Reply with the missing values.').slice(0, 1000),
+      });
+      return false;
+    }
+    const params = Object.entries(decision.intent.params).map(([name, value]) => name + '=' + value).join(', ');
+    this.state = {
+      ...this.state, intent: decision.intent,
+      messages: [...this.state.messages, {
+        id: this.dependencies.id(), sender: 'agent',
+        content: ('Understood: ' + decision.intent.summary + (params ? ' Params: ' + params : '')).slice(0, 1500),
+        timestamp: this.timestamp(),
+      }],
+    };
+    return true;
   }
 
   private isActive(): boolean {
