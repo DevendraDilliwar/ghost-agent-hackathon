@@ -67,7 +67,7 @@ Use a disposable Ubuntu **X11** desktop with one display and `xdotool` installed
 3. Run `npm run dev`. In Settings, enter the Meta key and choose Connect & test. Alternatively, configure ignored `.env.local` from `.env.example` for development and choose Test configured key.
 4. The test sends one short text-only request to Meta. A successful text test does not prove computer-use/image capability. Read the remaining desktop preflight results.
 5. Confirm cloud screenshot processing and the isolated environment, enter a simple goal, choose limits if needed, and start.
-6. Review the full proposed text/coordinates before each input action. Use Pause/Stop or **Ctrl + Shift + Escape** for emergency Stop.
+6. Review the full proposed text/coordinates before each input action. Use Pause/Stop or the **Emergency Stop shortcut shown in Settings and task controls**. The app selects an available combination automatically; Recheck desktop retries if registration failed.
 7. Inspect the final screenshot. Explicitly confirm completion or mark the result incomplete.
 
 The main process loads `.env.local` for development only. Packaged builds can use the in-app session connection or a process-environment key. The password input temporarily holds a newly entered key and clears immediately after submission. Main-process connection metadata never returns the key to any renderer. New in-app keys stay in main-process memory until exit: no credential file, localStorage, or protected persistence has been added. Changing/testing keys is rejected while a task is active. Each app session requires an explicit connection test before starting.

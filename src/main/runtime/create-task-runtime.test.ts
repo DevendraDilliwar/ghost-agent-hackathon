@@ -68,7 +68,7 @@ describe('emergency Stop registration and task readiness', () => {
     runtime.controller.confirm(task.runId!, true);
     expect(runtime.controller.getSnapshot().status).toBe('completed');
     expect(stubs.execute).toHaveBeenCalledTimes(1);
-    expect(stubs.execute.mock.calls[0][0]).toEqual({ type: 'type', text: 'Hello from Ghost Agent!' });
+    expect(stubs.execute.mock.calls[0]?.[0]).toEqual({ type: 'type', text: 'Hello from Ghost Agent!' });
     expect(stubs.register).toHaveBeenCalledTimes(2);
     expect(stubs.probe).toHaveBeenCalledTimes(1);
   });
@@ -116,7 +116,7 @@ describe('emergency Stop registration and task readiness', () => {
   it('the fallback callback stops the current run and cannot execute a pending action', async () => {
     stubs.register.mockReturnValueOnce(false);
     const runtime = setup();
-    const stop = stubs.register.mock.calls[1][1] as () => void;
+    const stop = stubs.register.mock.calls[1]![1] as () => void;
     expect(() => stop()).not.toThrow();
     await runtime.testConnection('fake-session-key');
     stubs.decide.mockResolvedValue({ ...finished, action: { type: 'type', text: 'Test' } });
@@ -136,7 +136,7 @@ describe('emergency Stop registration and task readiness', () => {
     // A different registration in this process must be left alone.
     registered.add('Control+Shift+Escape');
     const runtime = setup();
-    expect(stubs.register.mock.calls[0][0]).toBe('Control+Alt+Shift+Escape');
+    expect(stubs.register.mock.calls[0]?.[0]).toBe('Control+Alt+Shift+Escape');
     runtime.dispose();
     runtime.dispose();
     expect(await runtime.readiness()).toMatchObject({ ready: false, emergencyStopReady: false, emergencyStopShortcut: null });

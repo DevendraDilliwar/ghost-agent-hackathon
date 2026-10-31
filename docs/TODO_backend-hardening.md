@@ -11,6 +11,11 @@ Status: initial repository inventory, 2026-10-29, retained as a historical basel
 
 ## Audit Findings
 
+- [x] **FINDING-STOP-001 [High] [Emergency Stop registration]**:
+  - **Issue**: The user's screenshots show Meta text API and Screen & input Ready, but Emergency Stop unavailable and Send disabled. The runtime attempted only `CommandOrControl+Shift+Escape` once at construction. Recheck desktop returned that cached failure instead of retrying registration. The exact owner of the conflicting shortcut is unconfirmed; Electron documents that shortcuts already taken by another application fail registration.
+  - **Risk**: A single unavailable key combination prevents every task from starting for the entire app session, even with a verified model connection and supported desktop.
+  - **Proposed Fix**: Try a bounded list of Stop shortcuts, retain the successful registration, retry on readiness checks when unavailable, display the selected shortcut in Settings/chat/floating controls, and release only the owned registration. Continue blocking execution if every candidate fails. Source: [Electron globalShortcut](https://www.electronjs.org/docs/latest/api/global-shortcut).
+
 - [x] **FINDING-KEYLOOP-001 [Medium] [Connection versus desktop readiness]**:
   - **Issue**: The user reported repeated key prompts in the same app session and confirmed Meta text API was Ready/Test configured key. `TaskComposer` originally routed every `!ready` submit to API Settings, while `ready` combined model verification, desktop support, and Emergency Stop. `ConnectionSetup` always displayed an API-key entry form, including when the main-process connection was already verified. Server-rendering reproduces the misleading prompt with a verified model and a failing desktop check. The user's specific desktop failure has not been observed directly.
   - **Risk**: A non-credential blocker is presented as a need to enter or test the key again, creating a repeated setup path and potentially unnecessary text-test requests.
@@ -42,6 +47,8 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 
 ## Verified OK (No Action)
 
+- [x] **OK-STOP-001** Preserve main-process readiness enforcement, both per-run consent checks, action review, and existing Stop cancellation. Regression coverage confirms a fallback callback stops the current run and prevents approval of the interrupted action. A registration failure does not clear or retest the API key. No OS shortcuts, permissions, packages, or credential storage are changed.
+
 - [x] **OK-KEYREUSE-001** Main-process session key lifetime is already independent of task lifetime. New integration tests verify one connection probe supports successive completed tasks, task failure/Stop do not clear verification, and desktop rechecks recover without another API probe. Metadata never returns the key. Preserve this implementation; no credential persistence, main-process restart workaround, or relaxed desktop checks are justified by this UI finding.
 
 - [x] **OK-CONNECTION-001** The existing named IPC key submission, session-only main-process key handling, immediate password-field clearing, text-only connection probe, and backend readiness enforcement already support in-app connection. Preserve these behaviors; no new secret persistence, model request, desktop action, or broader approval mode is required for this UI correction.
@@ -54,6 +61,12 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 No authentication flow, encryption implementation, API middleware, backup system, or production monitoring has been verified as adequate. Absence of code is not a passed quality check.
 
 ## Remediation Plan
+
+- [x] **FIX-STOP-001 [Emergency Stop registration]**:
+  - **Change**: Try Ctrl + Shift + Escape, Ctrl + Alt + Shift + Escape, then Ctrl + Shift + F12. Keep a working registration across tasks; retry failed/lost registrations on Recheck. Expose the selected label through existing readiness and restricted controls metadata. Show explicit permission guidance on the disabled send button.
+  - **Rollback**: Revert the scoped runtime, shared contracts, controls IPC/projection, renderer, and related test changes together. No data migration is required; the previous behavior again blocks on a primary-shortcut conflict.
+  - **Validation**: `npm run check` passes with 99 tests in 10 files, TypeScript, ESLint, production build, and both standalone preload gates. Eight new mocked runtime cases cover primary registration, fallback task completion after approval, registration exceptions, all candidates failing, recovery without key re-entry, lost registration, stopping consecutive runs, and ownership/disposal. One controls IPC regression checks the selected label. Ten server-rendered assertions check displayed labels, connection state, blockers, and consent gating; these are not interactive native UI tests.
+- [ ] **FIX-STOP-LIVE-001 [Xubuntu acceptance]**: Update the VM checkout, restart the app, connect the session key once, and confirm all three checks are Ready with an actual Stop shortcut displayed. Open a blank Mousepad document, submit a short typing task with both consents, approve the proposed input, and check the result. Test the displayed shortcut during a second run with the guest focused, and confirm a third task needs no new key. Native shortcut delivery and live model/desktop execution remain unverified by the assistant.
 
 - [x] **FIX-KEYLOOP-001 [Connection versus desktop readiness]**:
   - **Change**: Update only the connection panel, chat blocker message, and task-submit routing. Add three runtime integration regressions covering key reuse and independent desktop readiness. No provider requests, stored credentials, or input actions are performed by these tests.
@@ -95,6 +108,13 @@ No fixes are proposed for nonexistent components. The following scoped audits be
 - [x] **AUDIT-006** Record that no backend patch is proposed in this documentation-only stage. Future confirmed findings must receive a unique FINDING ID, severity, evidence, minimal change, and matching FIX task with rollback and validation before a patch is added here.
 
 ## Commands
+
+- [x] **CHECK-STOP-AUTO-001** The local gate below passes. Run it in CI/on the updated VM checkout as needed; complete FIX-STOP-LIVE-001 separately in Xubuntu. Automated tests use mocked Electron, model, and desktop adapters, so no API credit is consumed.
+
+```bash
+npm run check
+git diff --check
+```
 
 Run these read-only inventory commands from the repository root:
 
