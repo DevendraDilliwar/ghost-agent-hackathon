@@ -1,4 +1,4 @@
-import { Eye, ShieldCheck, Sparkles, Settings2, ExternalLink } from 'lucide-react';
+import { Eye, ShieldCheck, Sparkles, Settings2, ExternalLink, Square } from 'lucide-react';
 import type { AgentStatus } from '../../../../shared/contracts/task';
 import { statusLabels } from '../tasks/task-presentation';
 
@@ -7,11 +7,14 @@ interface ChatHeaderProps {
   connected: boolean;
   ready: boolean | undefined;
   settingsDisabled: boolean;
+  tokens: number;
+  showStop: boolean;
+  onStop: () => void;
   onOpenSetup: () => void;
   onCompact: () => void;
 }
 
-export function ChatHeader({ status, connected, ready, settingsDisabled, onOpenSetup, onCompact }: ChatHeaderProps) {
+export function ChatHeader({ status, connected, ready, settingsDisabled, tokens, showStop, onStop, onOpenSetup, onCompact }: ChatHeaderProps) {
   const isReady = connected && ready === true;
   const statusLabel = !connected 
     ? 'Browser preview mode' 
@@ -68,6 +71,11 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, onOpenS
 
       {/* Action Controls */}
       <div className="flex items-center gap-2.5">
+        {tokens > 0 && (
+          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[11px] font-medium text-slate-600" title="Tokens used by the current run">
+            {tokens} tokens
+          </span>
+        )}
         <button
           type="button"
           onClick={onOpenSetup}
@@ -88,6 +96,16 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, onOpenS
           <ExternalLink className="h-3.5 w-3.5" />
           <span>Floating HUD</span>
         </button>
+        {showStop && (
+          <button
+            type="button"
+            onClick={onStop}
+            className="flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-rose-500"
+          >
+            <Square className="h-3 w-3 fill-white" />
+            <span>Stop</span>
+          </button>
+        )}
       </div>
     </header>
   );
