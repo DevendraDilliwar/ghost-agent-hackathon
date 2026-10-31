@@ -27,7 +27,7 @@ export function MiniFloatingPopCard({
   const attention = ['awaiting_approval', 'needs_user', 'verifying', 'failed'].includes(status);
 
   return (
-    <main className="h-screen overflow-hidden border border-white/15 bg-slate-950/90 px-4 py-3 text-slate-100 shadow-2xl backdrop-blur-2xl">
+    <main className="h-screen overflow-hidden border border-white/15 bg-[#090d18] px-4 py-3 text-slate-100 shadow-2xl">
       <header className="control-drag flex items-center justify-between gap-2 border-b border-white/5 pb-2">
         <div className="flex items-center gap-2">
           <GripHorizontal className="h-3.5 w-3.5 text-slate-500 cursor-grab" />

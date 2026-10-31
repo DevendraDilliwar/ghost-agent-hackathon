@@ -20,11 +20,11 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, onOpenS
       : statusLabels[status];
 
   return (
-    <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-slate-950/40 px-5 py-4 backdrop-blur-md sm:px-6">
+    <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-[#090d18] px-5 py-4 sm:px-6">
       {/* Brand & Tagline */}
       <div className="flex items-center gap-3.5">
         <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-sky-400 p-[1px] shadow-lg shadow-indigo-500/20">
-          <div className="flex h-full w-full items-center justify-center rounded-[15px] bg-slate-950/90 backdrop-blur-sm">
+          <div className="flex h-full w-full items-center justify-center rounded-[15px] bg-slate-950">
             <Sparkles className="h-5 w-5 text-sky-400 animate-pulse" />
           </div>
           <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center">

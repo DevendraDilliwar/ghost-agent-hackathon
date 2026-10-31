@@ -10,7 +10,7 @@ export function RunReviewPanel({ runtime }: { runtime: TaskRuntimeView }) {
   const pendingAction = task.actions.find(action => action.status === 'awaiting_approval');
 
   return (
-    <section aria-label="Current task" className="space-y-4 rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-xl backdrop-blur-md">
+    <section aria-label="Current task" className="space-y-4 rounded-2xl border border-white/10 bg-[#0e1424] p-5 shadow-xl">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-wider text-sky-400">Task Execution Status</p>

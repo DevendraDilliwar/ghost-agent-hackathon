@@ -25,7 +25,7 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
 
         {/* 3 Pillar Cards */}
         <div className="mt-7 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="glow-card rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-left backdrop-blur-md">
+          <div className="glow-card rounded-2xl border border-white/10 bg-[#0e1424] p-4 text-left">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-400">
               <Eye className="h-4 w-4" />
             </div>
@@ -35,7 +35,7 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
             </p>
           </div>
 
-          <div className="glow-card rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-left backdrop-blur-md">
+          <div className="glow-card rounded-2xl border border-white/10 bg-[#0e1424] p-4 text-left">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
               <ShieldCheck className="h-4 w-4" />
             </div>
@@ -45,7 +45,7 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
             </p>
           </div>
 
-          <div className="glow-card rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-left backdrop-blur-md">
+          <div className="glow-card rounded-2xl border border-white/10 bg-[#0e1424] p-4 text-left">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
               <Mic className="h-4 w-4" />
             </div>
@@ -83,7 +83,7 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
               className={`max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed shadow-lg ${
                 isUser
                   ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-medium shadow-indigo-600/20'
-                  : 'border border-white/10 bg-slate-900/80 text-slate-200 backdrop-blur-md shadow-black/40'
+                  : 'border border-white/10 bg-[#0e1424] text-slate-200 shadow-black/40'
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>

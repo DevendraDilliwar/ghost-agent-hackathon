@@ -25,6 +25,11 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
+  if (process.platform === 'linux') {
+    app.commandLine.appendSwitch('disable-gpu-sandbox');
+    app.commandLine.appendSwitch('disable-dev-shm-usage');
+  }
+
   app.whenReady().then(async () => {
     loadDevelopmentEnvironment();
     await openMainWindow();

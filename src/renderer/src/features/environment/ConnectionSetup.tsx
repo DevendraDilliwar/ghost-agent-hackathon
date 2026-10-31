@@ -32,7 +32,7 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
   const isStored = info?.source === 'stored' || info?.hasStored;
 
   return (
-    <section aria-labelledby="setup-title" className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-2xl backdrop-blur-xl">
+    <section aria-labelledby="setup-title" className="rounded-2xl border border-white/10 bg-[#0d1322] p-5 shadow-2xl">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-4">
         <div>
@@ -139,9 +139,9 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
                 aria-describedby="meta-key-help"
                 autoFocus={!isConfigured}
                 maxLength={4096}
-                disabled={!runtime.connected || runtime.pending}
+                disabled={runtime.pending}
                 placeholder={isConfigured ? 'Enter a replacement key' : 'Paste your Meta API key (sk-...)'}
-                className="min-w-0 basis-full rounded-xl border border-white/10 bg-slate-950/90 px-3.5 py-3 text-sm text-slate-100 outline-none focus:border-indigo-400 disabled:opacity-40"
+                className="min-w-0 basis-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-3 text-sm text-slate-100 outline-none focus:border-indigo-400 disabled:opacity-40 cursor-text caret-indigo-400"
               />
 
               <div className="flex items-center justify-between w-full pt-1">

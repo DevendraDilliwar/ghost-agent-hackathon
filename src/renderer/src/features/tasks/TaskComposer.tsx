@@ -70,6 +70,7 @@ export function TaskComposer({
   const [voiceError, setVoiceError] = useState<string | null>(null);
   
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -176,8 +177,11 @@ export function TaskComposer({
             <button
               key={item.label}
               type="button"
-              onClick={() => setGoal(item.text)}
-              className="rounded-full border border-white/10 bg-slate-900/60 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition-all hover:border-indigo-500/50 hover:bg-indigo-950/40 hover:text-white"
+              onClick={() => {
+                setGoal(item.text);
+                textareaRef.current?.focus();
+              }}
+              className="cursor-pointer rounded-full border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition-all hover:border-indigo-500/50 hover:bg-indigo-950/60 hover:text-white active:scale-95"
             >
               {item.label}
             </button>
@@ -186,22 +190,24 @@ export function TaskComposer({
       )}
 
       {/* Main Console Container */}
-      <div className={`relative rounded-3xl border p-4 transition-all duration-300 backdrop-blur-xl ${
+      <div 
+        onClick={() => textareaRef.current?.focus()}
+        className={`relative rounded-3xl border p-4 cursor-text transition-colors duration-150 ${
         isListening
-          ? 'border-sky-500/80 bg-slate-900/90 shadow-xl shadow-sky-500/20'
-          : 'border-white/15 bg-slate-900/70 focus-within:border-indigo-500/80 focus-within:shadow-xl focus-within:shadow-indigo-500/10'
+          ? 'border-sky-500 bg-[#0e1526] shadow-xl shadow-sky-500/10'
+          : 'border-white/15 bg-[#0e1526] focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500/50'
       }`}>
         <div className="flex items-center justify-between pb-2 border-b border-white/5">
-          <label htmlFor="task-goal" className="text-xs font-bold tracking-wide text-slate-300">
+          <label htmlFor="task-goal" className="text-xs font-bold tracking-wide text-slate-300 cursor-text">
             Task Instruction
           </label>
 
           {/* Voice Language Toggle */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
             <button
               type="button"
               onClick={() => setVoiceLang(voiceLang === 'hi-IN' ? 'en-US' : 'hi-IN')}
-              className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300 transition-colors hover:bg-slate-700"
+              className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300 transition-colors hover:bg-slate-700 cursor-pointer"
               title="Click to toggle voice language"
             >
               <Globe className="h-2.5 w-2.5 text-indigo-400" />
@@ -211,6 +217,7 @@ export function TaskComposer({
         </div>
 
         <textarea
+          ref={textareaRef}
           id="task-goal"
           value={goal}
           onChange={event => setGoal(event.target.value)}
@@ -220,21 +227,21 @@ export function TaskComposer({
           disabled={busy}
           aria-describedby="task-entry-help"
           placeholder={isListening ? 'Listening to your voice... Speak now.' : 'Tell NoMCP what to do on your desktop... (e.g. "Tally me entry karo" or "Export report to Excel")'}
-          className="mt-2 w-full resize-none bg-transparent text-sm leading-relaxed text-slate-100 outline-none placeholder:text-slate-500"
+          className="mt-2 w-full resize-none bg-transparent text-sm leading-relaxed text-slate-100 outline-none placeholder:text-slate-500 cursor-text caret-indigo-400"
         />
 
         {voiceError && (
           <p className="text-[10px] text-amber-300 mt-1">{voiceError}</p>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3" onClick={e => e.stopPropagation()}>
           {/* Left: Voice Mic + Voice Wave + Shortcut hint */}
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={toggleVoice}
               disabled={busy}
-              className={`relative flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+              className={`relative flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer transition-all ${
                 isListening
                   ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 animate-pulse'
                   : 'border border-sky-500/30 bg-sky-950/40 text-sky-300 hover:bg-sky-900/60 hover:text-white'
@@ -269,7 +276,7 @@ export function TaskComposer({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-600 to-sky-500 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02] hover:shadow-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-600 to-sky-500 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02] hover:shadow-indigo-500/40 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable switches below' : 'Execute Universal Task'}
             <Send className="h-3.5 w-3.5" />
@@ -325,7 +332,7 @@ export function TaskComposer({
         <summary className="cursor-pointer hover:text-slate-300 text-[11px] font-medium">
           ⚙️ Advanced Limits & Execution Safety
         </summary>
-        <div className="mt-2.5 flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/60 p-3 backdrop-blur-md">
+        <div className="mt-2.5 flex items-center justify-between rounded-2xl border border-white/10 bg-[#0e1424] p-3">
           <span className="text-[11px] text-slate-300">Maximum autonomous actions:</span>
           <select
             id="action-limit"

@@ -23,7 +23,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const pending = task?.actions.filter(action => action.status === 'awaiting_approval') ?? [];
 
   return (
-    <section className="glass-panel-elevated flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px] border border-white/10 shadow-2xl backdrop-blur-2xl">
+    <section className="glass-panel-elevated flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px] border border-white/10 shadow-2xl">
       <ChatHeader
         status={status}
         connected={runtime.connected}
@@ -123,7 +123,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
         )}
       </div>
 
-      <footer className="max-h-[60dvh] shrink-0 overflow-y-auto border-t border-white/10 bg-slate-950/70 p-4 backdrop-blur-xl sm:p-5">
+      <footer className="max-h-[60dvh] shrink-0 overflow-y-auto border-t border-white/10 bg-[#090d18] p-4 sm:p-5">
         {active && (
           <RunControls
             status={status}

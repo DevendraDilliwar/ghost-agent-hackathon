@@ -30,7 +30,7 @@ export function VisualGroundingOverlay({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl">
       {/* Top Overlay Controls Bar */}
-      <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-2.5 py-1.5 backdrop-blur-md">
+      <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-2 rounded-xl border border-white/10 bg-[#0e1424] px-2.5 py-1.5">
         <span className="flex items-center gap-1 text-[11px] font-mono text-sky-300">
           <Tag className="h-3 w-3 text-sky-400" />
           <span>{elements.length} Grounded UI Tags</span>
@@ -38,7 +38,7 @@ export function VisualGroundingOverlay({
         <button
           type="button"
           onClick={() => setShowBoxes(!showBoxes)}
-          className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-200 transition-colors"
+          className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-200 transition-colors cursor-pointer"
         >
           {showBoxes ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
           <span>{showBoxes ? 'Hide Bounding Boxes' : 'Show Boxes'}</span>
