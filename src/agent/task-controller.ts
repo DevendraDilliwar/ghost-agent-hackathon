@@ -1,6 +1,8 @@
 import type { AgentAction, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
 import type { DesktopPort, ModelPort } from './ports';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
+import { defaultGroundingEngine } from './vision/ui-grounding';
+import { defaultPrismVerifier } from './vision/prism-verifier';
 
 interface ControllerDependencies {
   desktop: DesktopPort;
@@ -17,6 +19,7 @@ export function idleSnapshot(): TaskSnapshot {
     runId: null, revision: 0, status: 'idle', goal: '', maxSteps: 15, actions: [],
     messages: [], screenshot: null, pendingActionId: null, message: 'Ready for a test task.',
     awaitingCompletion: false, handoff: null, inputTokens: 0, outputTokens: 0,
+    groundedElements: [],
   };
 }
 
@@ -158,18 +161,31 @@ export class TaskController {
       if (execution) {
         await this.dependencies.desktop.execute(execution.action, execution.observation, signal);
         if (!this.current(generation, signal)) return;
-        const last = this.state.actions.at(-1);
-        this.state = { ...this.state, actions: this.state.actions.map(action => action.id === last?.id ? { ...action, status: 'executed' } : action) };
       }
 
       this.update({ status: 'observing', message: 'Capturing the selected test desktop.' });
       const observation = await this.dependencies.desktop.capture(signal);
       if (!this.current(generation, signal)) return;
-      this.update({ status: 'thinking', screenshot: observation.image, message: 'Asking Meta for the next step.' });
+
+      if (execution) {
+        const verdict = defaultPrismVerifier.verifyTransition(execution.observation, observation, execution.action);
+        const last = this.state.actions.at(-1);
+        this.state = {
+          ...this.state,
+          actions: this.state.actions.map(action => action.id === last?.id ? { ...action, status: 'executed', verification: verdict } : action),
+        };
+      }
+      const grounding = defaultGroundingEngine.groundScreen(observation);
+      this.update({
+        status: 'thinking',
+        screenshot: observation.image,
+        message: 'SAM 3.1 grounded ' + grounding.totalElements + ' interactive elements. Asking Meta for the next step.',
+        groundedElements: grounding.elements,
+      });
       const history = this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
         .map(action => action.status + ': ' + action.description);
       history.push(...this.clarifications.map(answer => 'User clarification: ' + answer));
-      const decision = await this.dependencies.model.decide({ goal: this.state.goal, observation, history, signal });
+      const decision = await this.dependencies.model.decide({ goal: this.state.goal, observation, history, signal, grounding });
       if (!this.current(generation, signal)) return;
       const inputTokens = this.state.inputTokens + decision.inputTokens;
       const outputTokens = this.state.outputTokens + decision.outputTokens;

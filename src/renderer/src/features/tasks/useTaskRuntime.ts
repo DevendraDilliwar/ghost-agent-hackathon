@@ -63,7 +63,7 @@ export function useTaskRuntime() {
     snapshot, readiness, connection, error, setupError, pending,
     connected: Boolean(bridge),
     refresh: () => { void refresh().catch(failure => { if (mounted.current) setSetupError(message(failure)); }); },
-    connectModel: async (candidate: string | null) => {
+    connectModel: async (candidate: string | null | { key?: string | null; remember?: boolean; forget?: boolean }) => {
       if (!bridge || busy.current) return;
       busy.current = true; setPending(true); setSetupError(null);
       try { await bridge.testModelConnection(candidate); }

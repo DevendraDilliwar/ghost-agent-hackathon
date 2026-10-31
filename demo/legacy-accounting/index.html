@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TallyPrime Gold - [Voucher Entry: Sales (F8)]</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0b2b1a;
+      color: #ffffd0;
+      font-family: "Courier New", Courier, monospace, monospace;
+      font-size: 14px;
+      user-select: none;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background-color: #051c0f;
+      border-bottom: 2px solid #33cc66;
+      padding: 6px 12px;
+      display: flex;
+      justify-content: space-between;
+      font-weight: bold;
+    }
+    .status-bar {
+      background-color: #051c0f;
+      border-top: 2px solid #33cc66;
+      padding: 6px 12px;
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+    }
+    .f-key {
+      background-color: #004d26;
+      border: 1px solid #33cc66;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .main-workspace {
+      flex: 1;
+      padding: 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .voucher-card {
+      border: 2px solid #33cc66;
+      background-color: #082113;
+      padding: 16px;
+      border-radius: 4px;
+    }
+    .row {
+      display: flex;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .label {
+      width: 220px;
+      color: #99ffbb;
+      font-weight: bold;
+    }
+    input, select {
+      background-color: #020f08;
+      border: 1px solid #33cc66;
+      color: #ffffd0;
+      font-family: inherit;
+      font-size: 14px;
+      padding: 4px 8px;
+      width: 320px;
+      outline: none;
+    }
+    input:focus, select:focus {
+      background-color: #003319;
+      border-color: #ffff00;
+      box-shadow: 0 0 8px #33cc66;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #004d26;
+      padding: 6px 10px;
+      text-align: left;
+    }
+    th {
+      background-color: #004d26;
+      color: #ffff80;
+    }
+    .actions-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+      justify-content: flex-end;
+    }
+    button {
+      background-color: #006633;
+      color: #ffffd0;
+      border: 2px solid #33cc66;
+      padding: 8px 18px;
+      font-family: inherit;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    button:hover {
+      background-color: #008844;
+      border-color: #ffff00;
+    }
+    .success-modal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #021a0c;
+      border: 3px solid #ffff00;
+      padding: 24px 32px;
+      text-align: center;
+      box-shadow: 0 0 30px rgba(0, 255, 100, 0.4);
+      z-index: 100;
+    }
+    .badge {
+      background-color: #ffff00;
+      color: #000;
+      padding: 2px 6px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <span>TallyPrime Gold (Educational / Legacy ERP Mode)</span>
+    <span>Gateway of Tally &gt; Accounting Vouchers</span>
+    <span>Date: 31-Oct-2026</span>
+  </header>
+
+  <div class="main-workspace">
+    <div class="voucher-card">
+      <div class="row">
+        <span class="label">Voucher Type:</span>
+        <span class="badge">Sales (F8)</span>
+        <span style="margin-left: 40px;" class="label">Voucher No:</span>
+        <span id="voucher-no" style="font-weight: bold; color: #ffff00;">INV-2026-089</span>
+      </div>
+
+      <div class="row">
+        <label class="label" for="party-name">Party A/c Name:</label>
+        <input type="text" id="party-name" value="Devendra Enterprises Pvt Ltd" />
+      </div>
+
+      <div class="row">
+        <label class="label" for="sales-ledger">Sales Ledger:</label>
+        <select id="sales-ledger">
+          <option>GST Local Sales @ 18%</option>
+          <option>Interstate Sales @ 18%</option>
+          <option>Export Sales (Zero Rated)</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label class="label" for="item-desc">Item / Description:</label>
+        <input type="text" id="item-desc" value="AI Universal Worker Software License" />
+      </div>
+
+      <div class="row">
+        <label class="label" for="invoice-amount">Taxable Amount (INR):</label>
+        <input type="number" id="invoice-amount" value="50000" />
+      </div>
+
+      <div class="row">
+        <label class="label" for="narration">Narration:</label>
+        <input type="text" id="narration" value="Automated entry executed via NoMCP Universal Agent" style="width: 500px;" />
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Particulars</th>
+            <th>Rate</th>
+            <th>Amount (INR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>AI Universal Worker Software License</td>
+            <td>18%</td>
+            <td id="table-base">₹50,000.00</td>
+          </tr>
+          <tr>
+            <td>Central GST (CGST)</td>
+            <td>9%</td>
+            <td id="table-cgst">₹4,500.00</td>
+          </tr>
+          <tr>
+            <td>State GST (SGST)</td>
+            <td>9%</td>
+            <td id="table-sgst">₹4,500.00</td>
+          </tr>
+          <tr style="font-weight: bold; background-color: #042e18;">
+            <td>TOTAL INVOICE VALUE</td>
+            <td>--</td>
+            <td id="table-total" style="color: #ffff00;">₹59,000.00</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="actions-row">
+        <button type="button" id="btn-export" onclick="exportExcel()">Alt+E: Export Excel</button>
+        <button type="button" id="btn-save" style="background-color: #008844;" onclick="saveVoucher()">Accept (Y/N): Save Voucher</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="f-key">F1: Select Cmp</span>
+    <span class="f-key">F2: Date</span>
+    <span class="f-key">F4: Contra</span>
+    <span class="f-key">F5: Payment</span>
+    <span class="f-key">F6: Receipt</span>
+    <span class="f-key">F7: Journal</span>
+    <span class="f-key">F8: Sales</span>
+    <span class="f-key">Alt+E: Export</span>
+  </div>
+
+  <div id="modal-success" class="success-modal">
+    <h2 style="color: #ffff00; margin-bottom: 8px;">✓ VOUCHER ACCEPTED &amp; SAVED</h2>
+    <p style="margin-bottom: 12px;">Voucher INV-2026-089 posted to General Ledger.</p>
+    <p style="color: #99ffbb; margin-bottom: 16px;">Excel Export: <strong>Tally_Invoice_Export_2026.xlsx</strong> Ready</p>
+    <button type="button" onclick="closeModal()">Close / New Voucher</button>
+  </div>
+
+  <script>
+    function updateCalculations() {
+      const amt = Number(document.getElementById('invoice-amount').value) || 0;
+      const cgst = amt * 0.09;
+      const sgst = amt * 0.09;
+      const total = amt + cgst + sgst;
+
+      document.getElementById('table-base').innerText = '₹' + amt.toLocaleString('en-IN') + '.00';
+      document.getElementById('table-cgst').innerText = '₹' + cgst.toLocaleString('en-IN') + '.00';
+      document.getElementById('table-sgst').innerText = '₹' + sgst.toLocaleString('en-IN') + '.00';
+      document.getElementById('table-total').innerText = '₹' + total.toLocaleString('en-IN') + '.00';
+    }
+
+    document.getElementById('invoice-amount').addEventListener('input', updateCalculations);
+
+    function saveVoucher() {
+      document.getElementById('modal-success').style.display = 'block';
+    }
+
+    function closeModal() {
+      document.getElementById('modal-success').style.display = 'none';
+      document.getElementById('voucher-no').innerText = 'INV-2026-090';
+    }
+
+    function exportExcel() {
+      alert('Tally Data Exported to Excel: /home/satoru-gojo/Documents/Tally_Summary_Report.xlsx');
+    }
+  </script>
+</body>
+</html>

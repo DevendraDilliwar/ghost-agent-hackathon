@@ -16,7 +16,7 @@ export interface DesktopBridge {
   getApplicationInfo(): Promise<ApplicationInfo>;
   getRuntimeReadiness(): Promise<RuntimeReadiness>;
   getModelConnection(): Promise<ModelConnectionInfo>;
-  testModelConnection(apiKey: string | null): Promise<ModelConnectionInfo>;
+  testModelConnection(payload: string | null | { key?: string | null; remember?: boolean; forget?: boolean }): Promise<ModelConnectionInfo>;
   showFloatingControls(): Promise<void>;
   getTaskSnapshot(): Promise<TaskSnapshot>;
   startTask(configuration: RunConfiguration): Promise<TaskSnapshot>;

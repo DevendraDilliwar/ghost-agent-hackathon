@@ -20,6 +20,9 @@ export class MetaComputerModel implements ModelPort {
   constructor(private readonly config: MetaConfiguration, private readonly request: typeof fetch = fetch) {}
 
   async decide(input: Parameters<ModelPort['decide']>[0]) {
+    const groundingText = input.grounding ? '\n' + input.grounding.elements.map(
+      el => `[Tag ${el.id}] ${el.type}: "${el.label ?? ''}" center=(${el.center.x}, ${el.center.y})`
+    ).join('; ') : '';
     const response = await requestMeta(this.config, {
       // The output allowance includes private reasoning, not only action JSON.
       max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions,
@@ -32,7 +35,7 @@ export class MetaComputerModel implements ModelPort {
           }, required: ['kind', 'reason'], additionalProperties: false } },
       ],
       input: [{ role: 'user', content: [
-        { type: 'input_text', text: 'Goal: ' + input.goal + '\nExecuted steps: ' + (input.history.join('; ') || 'None') },
+        { type: 'input_text', text: 'Goal: ' + input.goal + '\nExecuted steps: ' + (input.history.join('; ') || 'None') + (groundingText ? '\nGrounding Elements: ' + groundingText : '') },
         { type: 'input_image', image_url: input.observation.image },
       ] }],
     }, input.signal, this.request);

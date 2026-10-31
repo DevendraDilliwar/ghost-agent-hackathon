@@ -22,5 +22,6 @@ export interface ModelPort {
     observation: ScreenObservation;
     history: string[];
     signal: AbortSignal;
+    grounding?: import('../shared/contracts/grounding').GroundingResult;
   }): Promise<ModelDecision>;
 }

@@ -1,5 +1,5 @@
-appId: dev.ghostagent.desktop
-productName: Ghost Agent
+appId: dev.nomcp.desktop
+productName: NoMCP
 asar: true
 directories:
   output: release
@@ -9,5 +9,10 @@ files:
 linux:
   target:
     - tar.gz
+    - AppImage
   category: Utility
+win:
+  target:
+    - nsis
+    - portable
 npmRebuild: true

@@ -1,7 +1,8 @@
 {
   "name": "ghost-agent",
   "version": "0.1.0",
-  "description": "A desktop agent that turns user goals into verified computer tasks.",
+  "description": "NoMCP: The Universal Worker - Zero APIs. Zero Connectors. Pure Vision.",
+  "author": "Devendra Dilliwar",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -21,7 +22,9 @@
     "test:unit": "vitest run",
     "check:preloads": "node scripts/check-preloads.mjs",
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run build && npm run check:preloads",
-    "package:linux": "npm run build && electron-builder --linux --publish never"
+    "package:linux": "npm run build && electron-builder --linux --publish never",
+    "package:win": "npm run build && electron-builder --win --publish never",
+    "demo:tally": "electron demo/legacy-accounting/launch.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.64.0",

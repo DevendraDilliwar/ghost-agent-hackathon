@@ -104,6 +104,19 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
               </div></details>
             )}
 
+            {action.verification && (
+              <div className="pl-7 mt-0.5">
+                <div className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] ${
+                  action.verification.status === 'verified_success'
+                    ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-300'
+                    : 'border-amber-500/30 bg-amber-950/40 text-amber-300'
+                }`}>
+                  <Eye className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="font-medium">{action.verification.summary}</span>
+                </div>
+              </div>
+            )}
+
             {action.text && (
               <div className="pl-7 font-mono text-[10px] text-emerald-300">
                 <code className="bg-slate-950 px-2 py-1 rounded border border-slate-800 block max-h-48 overflow-y-auto whitespace-pre-wrap break-all">

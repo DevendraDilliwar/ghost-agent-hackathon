@@ -14,14 +14,14 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   const rendererUrl = developmentUrl ?? pathToFileURL(rendererFile).href;
   const controlsUrl = developmentUrl ? new URL('controls.html', developmentUrl).href : pathToFileURL(controlsFile).href;
   const window = new BrowserWindow({
-    width: 1080, height: 820, minWidth: 680, minHeight: 560, title: 'Ghost Agent', show: false,
-    autoHideMenuBar: true, backgroundColor: '#090d16', webPreferences: windowPreferences('index'),
+    width: 1080, height: 820, minWidth: 680, minHeight: 560, title: 'NoMCP - The Universal Worker', show: false,
+    autoHideMenuBar: true, backgroundColor: '#06080f', webPreferences: windowPreferences('index'),
   });
   const area = screen.getPrimaryDisplay().workArea;
   const controls = new BrowserWindow({
-    width: 430, height: 142, x: Math.max(area.x, area.x + area.width - 446), y: Math.max(area.y, area.y + area.height - 158),
-    title: 'Ghost Agent controls', show: false, frame: false, resizable: false,
-    alwaysOnTop: true, skipTaskbar: true, backgroundColor: '#0f172a', webPreferences: windowPreferences('controls'),
+    width: 440, height: 148, x: Math.max(area.x, area.x + area.width - 456), y: Math.max(area.y, area.y + area.height - 164),
+    title: 'NoMCP HUD', show: false, frame: false, resizable: false,
+    alwaysOnTop: true, skipTaskbar: true, backgroundColor: '#06080f', webPreferences: windowPreferences('controls'),
   });
   window.on('show', () => { if (!controls.isDestroyed()) controls.hide(); });
   secureWindow(window, Boolean(developmentUrl));

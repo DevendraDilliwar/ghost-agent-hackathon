@@ -6,16 +6,26 @@ export class ModelConnection {
   private source: ModelConnectionInfo['source'];
   private testing = false;
   private operation: AbortController | null = null;
+  private hasStored = false;
 
-  constructor(key: string, readonly model: MetaModelId, private readonly probe: (key: string, signal: AbortSignal) => Promise<void>) {
+  constructor(key: string, readonly model: MetaModelId, private readonly probe: (key: string, signal: AbortSignal) => Promise<void>, initialSource?: ModelConnectionInfo['source']) {
     this.apiKey = key.trim();
-    this.source = this.apiKey ? 'environment' : 'none';
+    this.source = initialSource ?? (this.apiKey ? 'environment' : 'none');
   }
+
+  setHasStored(stored: boolean): void { this.hasStored = stored; }
+  setSource(source: ModelConnectionInfo['source']): void { this.source = source; }
 
   getKey(): string { return this.apiKey; }
 
   info(): ModelConnectionInfo {
-    return { model: this.model, configured: Boolean(this.apiKey), verified: this.verified, source: this.source };
+    return {
+      model: this.model,
+      configured: Boolean(this.apiKey),
+      verified: this.verified,
+      source: this.source,
+      ...(this.hasStored ? { hasStored: true } : {}),
+    };
   }
 
   async test(candidate: unknown): Promise<ModelConnectionInfo> {

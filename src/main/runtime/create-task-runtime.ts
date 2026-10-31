@@ -9,6 +9,7 @@ import type { RuntimeReadiness } from '../../shared/contracts/desktop';
 import { IPC_CHANNELS } from '../../shared/ipc/channels';
 import { ModelConnection } from '../config/model-connection';
 import { testMetaConnection } from '../../providers/meta/meta-request';
+import { saveStoredApiKey, loadStoredApiKey, clearStoredApiKey, hasStoredApiKey } from '../config/secure-store';
 import type { RunConfiguration, TaskSnapshot } from '../../shared/contracts/task';
 import { controlsSnapshot } from '../windows/controls-snapshot';
 
@@ -24,6 +25,23 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   const apiKey = process.env.META_API_KEY?.trim() ?? '';
   const model = process.env.GHOST_META_MODEL === 'muse-wonder-1.0' ? 'muse-wonder-1.0' : 'muse-spark-1.3';
   const connection = new ModelConnection(apiKey, model, (key, signal) => testMetaConnection({ apiKey: key, model }, signal));
+
+  void (async () => {
+    try {
+      const hasStored = await hasStoredApiKey();
+      connection.setHasStored(hasStored);
+      if (!apiKey && hasStored) {
+        const storedKey = await loadStoredApiKey();
+        if (storedKey) {
+          await connection.test(storedKey).catch(() => undefined);
+          connection.setSource('stored');
+          connection.setHasStored(true);
+        }
+      }
+    } catch {
+      // Non-blocking initialization
+    }
+  })();
   const desktop = new UbuntuDesktop(window, () => [controls]);
   let shortcut: typeof emergencyShortcuts[number] | null = null;
   let disposed = false;
@@ -68,6 +86,26 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     },
     async testConnection(candidate: unknown) {
       if (!['idle', 'completed', 'stopped', 'failed'].includes(controller.getSnapshot().status)) throw new Error('Stop the current task before changing the model connection.');
+      if (candidate && typeof candidate === 'object') {
+        const payload = candidate as { key?: unknown; remember?: unknown; forget?: unknown };
+        if (payload.forget === true) {
+          await clearStoredApiKey();
+          connection.dispose();
+          connection.setHasStored(false);
+          return connection.info();
+        }
+        const key = payload.key === undefined ? null : payload.key;
+        await connection.test(key);
+        if (payload.remember === true && connection.info().verified) {
+          await saveStoredApiKey(connection.getKey());
+          connection.setHasStored(true);
+          connection.setSource('stored');
+        } else if (payload.remember === false) {
+          await clearStoredApiKey();
+          connection.setHasStored(false);
+        }
+        return connection.info();
+      }
       return connection.test(candidate);
     },
     async readiness(): Promise<RuntimeReadiness> {
@@ -80,6 +118,16 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
       } catch (error) {
         desktopSupported = false;
         issues.push(error instanceof Error ? error.message : 'Desktop preflight failed.');
+      }
+      if (!connection.getKey()) {
+        try {
+          const storedKey = await loadStoredApiKey();
+          if (storedKey) {
+            await connection.test(storedKey).catch(() => undefined);
+            connection.setSource('stored');
+            connection.setHasStored(true);
+          }
+        } catch { /* Ignore */ }
       }
       const info = connection.info();
       if (!info.configured) issues.unshift('Connect your Meta API key in Settings.');

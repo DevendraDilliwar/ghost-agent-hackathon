@@ -4,5 +4,6 @@ export interface ModelConnectionInfo {
   readonly model: MetaModelId;
   readonly configured: boolean;
   readonly verified: boolean;
-  readonly source: 'environment' | 'session' | 'none';
+  readonly source: 'environment' | 'session' | 'stored' | 'none';
+  readonly hasStored?: boolean;
 }

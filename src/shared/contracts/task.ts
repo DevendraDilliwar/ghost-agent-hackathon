@@ -17,6 +17,14 @@ export type AgentStatus =
 
 export type ActionType = 'click' | 'double_click' | 'type' | 'key_press' | 'scroll' | 'wait' | 'verify';
 
+export interface ActionVerification {
+  readonly status: 'verified_success' | 'stalled_no_change' | 'error_dialog_detected' | 'human_intervention_needed';
+  readonly visualDeltaPercent: number;
+  readonly summary: string;
+  readonly recoverySuggestion?: string;
+  readonly verifiedAt: number;
+}
+
 export interface AgentAction {
   id: string;
   type: ActionType;
@@ -27,6 +35,7 @@ export interface AgentAction {
   timestamp: string;
   status: 'pending' | 'awaiting_approval' | 'executed' | 'rejected' | 'failed';
   riskLevel?: 'safe' | 'medium' | 'high';
+  verification?: ActionVerification;
 }
 
 export interface ChatMessage {
@@ -66,4 +75,5 @@ export interface TaskSnapshot {
   handoff: UserHandoff | null;
   inputTokens: number;
   outputTokens: number;
+  groundedElements?: import('./grounding').GroundedElement[];
 }
