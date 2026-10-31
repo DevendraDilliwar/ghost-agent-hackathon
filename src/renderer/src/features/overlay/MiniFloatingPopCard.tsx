@@ -1,4 +1,5 @@
 import { Sparkles, Maximize2, Pause, Play, Square, GripHorizontal } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 import type { ControlsSnapshot } from '../../../../shared/contracts/controls';
 import { isActiveTask, statusLabels } from '../tasks/task-presentation';
 
@@ -64,49 +65,56 @@ export function MiniFloatingPopCard({
       <div className="mt-2.5 flex items-center gap-2">
         {active && (
           resume ? (
-            <button
+            <Button
               type="button"
               disabled={pending}
               onClick={onResume}
-              className="flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm disabled:opacity-40"
+              variant="success"
+              size="sm"
+              className="font-bold"
             >
               <Play className="h-3 w-3 fill-white" />
               <span>{status === 'needs_user' ? 'Done — Resume' : 'Resume'}</span>
-            </button>
+            </Button>
           ) : (
             status !== 'needs_user' && (
-              <button
+              <Button
                 type="button"
                 disabled={pending}
                 onClick={onPause}
-                className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:opacity-40"
+                variant="secondary"
+                size="sm"
               >
                 <Pause className="h-3 w-3" />
                 <span>Pause</span>
-              </button>
+              </Button>
             )
           )
         )}
 
         {active && (
-          <button
+          <Button
             type="button"
             onClick={onStop}
-            className="flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm"
+            variant="destructive"
+            size="sm"
+            className="font-bold"
           >
             <Square className="h-3 w-3 fill-white" />
             <span>Stop</span>
-          </button>
+          </Button>
         )}
 
-        <button
+        <Button
           type="button"
           onClick={onExpand}
-          className="ml-auto flex items-center gap-1 rounded-xl bg-slate-900 hover:bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm"
+          variant="default"
+          size="sm"
+          className="ml-auto font-bold"
         >
           <Maximize2 className="h-3 w-3" />
           <span>Expand</span>
-        </button>
+        </Button>
       </div>
 
       {error && (

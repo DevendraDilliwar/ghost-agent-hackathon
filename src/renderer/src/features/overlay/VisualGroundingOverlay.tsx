@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Eye, EyeOff, Crosshair, Tag } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 import type { GroundedElement } from '../../../../shared/contracts/grounding';
 
 interface VisualGroundingOverlayProps {
@@ -35,14 +36,15 @@ export function VisualGroundingOverlay({
           <Tag className="h-3 w-3 text-sky-400" />
           <span>{elements.length} Grounded UI Tags</span>
         </span>
-        <button
+        <Button
           type="button"
           onClick={() => setShowBoxes(!showBoxes)}
-          className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-200 transition-colors cursor-pointer"
+          variant="secondary"
+          size="sm"
         >
           {showBoxes ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
           <span>{showBoxes ? 'Hide Bounding Boxes' : 'Show Boxes'}</span>
-        </button>
+        </Button>
       </div>
 
       {/* Screen Frame Container */}

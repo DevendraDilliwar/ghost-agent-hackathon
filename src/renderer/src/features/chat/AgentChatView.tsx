@@ -6,25 +6,34 @@ import { HandoffPanel } from '../tasks/HandoffPanel';
 import { RecoveryPanel } from '../tasks/RecoveryPanel';
 import { isActiveTask } from '../tasks/task-presentation';
 import type { TaskRuntimeView } from '../tasks/useTaskRuntime';
+import type { ApprovalMode } from '../../../../shared/contracts/task';
 import { ChatHeader } from './ChatHeader';
 import { MessageFeed } from './MessageFeed';
 import { WorkspacePane } from './WorkspacePane';
 import { SettingsOverlay } from './SettingsOverlay';
 import { ShieldAlert, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 
 export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const [showSetup, setShowSetup] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('full_access');
+  const [screenConsent, setScreenConsent] = useState(true);
+  const [isolatedEnvironment, setIsolatedEnvironment] = useState(true);
+  const [maxSteps, setMaxSteps] = useState(15);
   const task = runtime.snapshot;
   const status = task?.status ?? 'idle';
   const active = isActiveTask(status);
   const modelReady = runtime.connection?.verified === true;
+  const keyPresent = runtime.connection?.configured === true;
   const ready = runtime.connected && modelReady && runtime.readiness?.ready === true;
+  // Settings always opens on live state, never on a stale mount-time snapshot.
+  const openSetup = () => { runtime.refresh(); setShowSetup(true); };
   const history = task?.actions.filter(action => action.status !== 'awaiting_approval') ?? [];
   const pending = task?.actions.filter(action => action.status === 'awaiting_approval') ?? [];
   const tokens = (task?.inputTokens ?? 0) + (task?.outputTokens ?? 0);
 
   return (
-    <section className="glass-panel-elevated relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px]">
+    <section className="glass-panel-elevated relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <ChatHeader
         status={status}
         connected={runtime.connected}
@@ -33,14 +42,14 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
         tokens={tokens}
         showStop={active}
         onStop={runtime.stop}
-        onOpenSetup={() => setShowSetup(true)}
+        onOpenSetup={openSetup}
         onCompact={runtime.showControls}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         <div className="flex min-h-0 w-full flex-1 flex-col border-b border-slate-200 lg:w-[400px] lg:flex-none lg:border-b-0 lg:border-r">
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
-            {!runtime.connected && (
+            {!runtime.connected && !active && (
               <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800">
                 <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
                 <span>Browser UI preview mode. Open the installed desktop app to operate your native desktop session.</span>
@@ -48,11 +57,9 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
             )}
 
             {ready && !active && (
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-800 shadow-sm">
-                <div className="flex items-center gap-2.5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span>Universal Desktop runtime ready. Emergency stop hotkey: <kbd className="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-800">{runtime.readiness?.emergencyStopShortcut ?? 'Ctrl+Alt+S'}</kbd></span>
-                </div>
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                <span>Ready · Stop: <kbd className="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-800">{runtime.readiness?.emergencyStopShortcut ?? 'Ctrl+Alt+S'}</kbd></span>
               </div>
             )}
 
@@ -62,7 +69,9 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
                   <p className="font-medium">
                     {modelReady
                       ? 'Meta Model API connected. Complete desktop permission checks below.'
-                      : 'Connect your Meta API key to enable autonomous vision & planning.'}
+                      : keyPresent
+                        ? 'Saved API key found. Verifying the connection automatically…'
+                        : 'Connect your Meta API key to enable autonomous vision & planning.'}
                   </p>
                   {modelReady && runtime.readiness && runtime.readiness.issues.length > 0 && (
                     <ul className="list-disc space-y-1 pl-4 text-amber-700 text-[11px]">
@@ -72,14 +81,16 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
                     </ul>
                   )}
                 </div>
-                <button
+                <Button
                   type="button"
-                  onClick={modelReady ? runtime.refresh : () => setShowSetup(true)}
-                  className="flex items-center gap-1.5 shrink-0 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition-all hover:bg-slate-800"
+                  onClick={modelReady || keyPresent ? runtime.refresh : openSetup}
+                  variant="default"
+                  size="sm"
+                  className="shrink-0 font-bold"
                 >
-                  <span>{modelReady ? 'Recheck System' : 'Setup Connection'}</span>
+                  <span>{modelReady ? 'Recheck System' : keyPresent ? 'Recheck Now' : 'Setup Connection'}</span>
                   <ArrowRight className="h-3 w-3" />
-                </button>
+                </Button>
               </div>
             )}
 
@@ -97,7 +108,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
                 <div className="flex items-center gap-2">
                   <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-ping" />
                   <h2 className="text-xs font-bold uppercase tracking-wider text-amber-700">
-                    Action Verification Gate (Human in the Loop)
+                    Review this action
                   </h2>
                 </div>
                 <ActionTimeline
@@ -110,7 +121,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
             )}
 
             <HandoffPanel key={task?.revision ?? 0} runtime={runtime} />
-            <RecoveryPanel runtime={runtime} onOpenSetup={() => setShowSetup(true)} />
+            <RecoveryPanel runtime={runtime} onOpenSetup={openSetup} />
           </div>
 
           <footer className="max-h-[60dvh] shrink-0 overflow-y-auto border-t border-slate-200 bg-white p-4 sm:p-5">
@@ -128,12 +139,15 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
               <TaskComposer
                 key={task?.runId ?? 'new'}
                 initialGoal={task?.goal ?? ''}
-                initialLimit={task?.maxSteps ?? 15}
+                approvalMode={approvalMode}
+                screenConsent={screenConsent}
+                isolatedEnvironment={isolatedEnvironment}
+                maxSteps={maxSteps}
                 busy={runtime.pending}
                 connected={runtime.connected}
                 modelReady={modelReady}
                 ready={ready}
-                onOpenSetup={() => setShowSetup(true)}
+                onOpenSetup={openSetup}
                 onLaunch={runtime.launch}
               />
             )}
@@ -145,7 +159,20 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
         </div>
       </div>
 
-      {showSetup && !active && <SettingsOverlay runtime={runtime} onClose={() => setShowSetup(false)} />}
+      {showSetup && !active && (
+        <SettingsOverlay
+          runtime={runtime}
+          approvalMode={approvalMode}
+          setApprovalMode={setApprovalMode}
+          screenConsent={screenConsent}
+          setScreenConsent={setScreenConsent}
+          isolatedEnvironment={isolatedEnvironment}
+          setIsolatedEnvironment={setIsolatedEnvironment}
+          maxSteps={maxSteps}
+          setMaxSteps={setMaxSteps}
+          onClose={() => setShowSetup(false)}
+        />
+      )}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { Hand } from 'lucide-react';
 import { useState } from 'react';
 import type { TaskRuntimeView } from './useTaskRuntime';
+import { Button } from '../../components/ui/button';
 
 export function HandoffPanel({ runtime }: { runtime: TaskRuntimeView }) {
   const [answer, setAnswer] = useState('');
@@ -19,10 +20,10 @@ export function HandoffPanel({ runtime }: { runtime: TaskRuntimeView }) {
           className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none" />
       </label>}
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={runtime.pending || (clarification && !answer.trim())} onClick={() => {
+        <Button type="button" disabled={runtime.pending || (clarification && !answer.trim())} onClick={() => {
           if (clarification) runtime.answerAndResume(answer); else runtime.resume();
-        }} className="rounded-xl bg-amber-400 px-4 py-2 text-xs font-semibold text-slate-900 disabled:opacity-40">{clarification ? 'Send answer & resume' : 'Done — resume agent'}</button>
-        <button type="button" onClick={runtime.showControls} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700">Show desktop controls</button>
+        }} variant="warning" size="sm">{clarification ? 'Send answer & resume' : 'Done — resume agent'}</Button>
+        <Button type="button" onClick={runtime.showControls} variant="secondary" size="sm">Show desktop controls</Button>
       </div>
     </section>
   );

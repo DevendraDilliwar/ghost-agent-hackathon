@@ -16,6 +16,7 @@ export function useTaskRuntime() {
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
   const mounted = useRef(false);
+  const autoVerifyAttempts = useRef(0);
   const bridge = window.ghostAgent;
 
   const accept = useCallback((next: TaskSnapshot) => {
@@ -38,6 +39,22 @@ export function useTaskRuntime() {
       .catch(() => { if (active) setError('Could not connect to the desktop runtime. Restart Ghost Agent.'); });
     return () => { active = false; mounted.current = false; unsubscribe(); };
   }, [accept, bridge, refresh]);
+
+  // The main process verifies a saved key in the background at startup. While
+  // it is in flight the first snapshot still says "untested" - refresh a few
+  // times so the UI flips to Ready on its own instead of nagging for setup.
+  useEffect(() => {
+    if (!bridge || !connection || !connection.configured || connection.verified) {
+      if (connection?.verified || !connection?.configured) autoVerifyAttempts.current = 0;
+      return;
+    }
+    if (pending || autoVerifyAttempts.current >= 5) return;
+    const timer = setTimeout(() => {
+      autoVerifyAttempts.current += 1;
+      void refresh().catch(() => undefined);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [bridge, connection, pending, refresh]);
 
   const command = useCallback(async (invoke: () => Promise<TaskSnapshot>) => {
     if (busy.current) return;

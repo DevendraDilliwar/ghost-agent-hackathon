@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import type { TaskRuntimeView } from '../tasks/useTaskRuntime';
 import { ConnectionSetup } from './ConnectionSetup';
+import { Button } from '../../components/ui/button';
 
 interface ConnectionDialogProps {
   open: boolean;
@@ -24,9 +25,9 @@ export function ConnectionDialog({ open, runtime, onClose }: ConnectionDialogPro
       {open && <>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id="connection-dialog-title" className="text-sm font-semibold">Connection settings</h2>
-          <button type="button" onClick={onClose} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 cursor-pointer transition-colors">
+          <Button type="button" onClick={onClose} variant="secondary" size="sm">
             <ArrowLeft className="h-3.5 w-3.5" />Back to chat
-          </button>
+          </Button>
         </div>
         <ConnectionSetup runtime={runtime} />
         <p className="mt-4 text-xs leading-relaxed text-slate-500">Your task draft stays in the chat. Return there when setup is complete; connecting will not start a task.</p>

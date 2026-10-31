@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { CheckCircle2, Circle, KeyRound, RefreshCw, Shield, Trash2, Check, Lock } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 import type { TaskRuntimeView } from '../tasks/useTaskRuntime';
 
 export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
@@ -58,15 +59,16 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
           </p>
         </div>
 
-        <button
+        <Button
           type="button"
           onClick={runtime.refresh}
           disabled={runtime.pending}
-          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40"
+          variant="secondary"
+          size="sm"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span>Recheck Desktop</span>
-        </button>
+        </Button>
       </div>
 
       {/* Main Form */}
@@ -91,33 +93,38 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
 
             <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
               {!info.verified && (
-                <button
+                <Button
                   type="submit"
                   disabled={!runtime.connected || runtime.pending}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-40"
+                  variant="default"
+                  size="sm"
+                  className="font-bold"
                 >
                   {runtime.pending ? 'Testing connection…' : 'Test Configured Key'}
-                </button>
+                </Button>
               )}
-              <button
+              <Button
                 type="button"
                 disabled={runtime.pending}
                 onClick={() => setChangingKey(true)}
-                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                variant="secondary"
+                size="sm"
               >
                 Change Key
-              </button>
+              </Button>
               {isStored && (
-                <button
+                <Button
                   type="button"
                   disabled={runtime.pending}
                   onClick={handleForget}
-                  className="ml-auto flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-40"
+                  variant="destructive"
+                  size="sm"
+                  className="ml-auto"
                   title="Remove saved encrypted key from this computer"
                 >
                   <Trash2 className="h-3 w-3" />
                   <span>Remove Saved Key</span>
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -165,22 +172,25 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
 
                 <div className="flex items-center gap-2">
                   {isConfigured && (
-                    <button
+                    <Button
                       type="button"
                       disabled={runtime.pending}
                       onClick={() => { setKey(''); setChangingKey(false); }}
-                      className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                      variant="secondary"
+                      size="sm"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
                     type="submit"
                     disabled={!runtime.connected || runtime.pending || (!key.trim() && !isConfigured)}
-                    className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-40 transition-all"
+                    variant="default"
+                    size="sm"
+                    className="font-bold"
                   >
                     {runtime.pending ? 'Testing Connection…' : key.trim() || !isConfigured ? 'Save & Connect' : 'Test Key'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

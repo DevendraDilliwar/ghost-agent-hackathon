@@ -2,6 +2,7 @@ import type { TaskRuntimeView } from './useTaskRuntime';
 import { statusLabels } from './task-presentation';
 import { VisualGroundingOverlay } from '../overlay/VisualGroundingOverlay';
 import { Eye } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 
 export function RunReviewPanel({ runtime }: { runtime: TaskRuntimeView }) {
   const task = runtime.snapshot;
@@ -57,22 +58,25 @@ export function RunReviewPanel({ runtime }: { runtime: TaskRuntimeView }) {
             Verify the final screen above against your goal. Confirm the verified outcome below:
           </p>
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
               disabled={runtime.pending}
               onClick={() => runtime.confirm(true)}
-              className="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-40"
+              variant="success"
+              size="sm"
+              className="font-bold"
             >
               Goal Verified Complete
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               disabled={runtime.pending}
               onClick={() => runtime.confirm(false)}
-              className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-40"
+              variant="secondary"
+              size="sm"
             >
               Task Incomplete / Needs Correction
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -26,22 +26,35 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   const model = process.env.GHOST_META_MODEL === 'muse-wonder-1.0' ? 'muse-wonder-1.0' : 'muse-spark-1.3';
   const connection = new ModelConnection(apiKey, model, (key, signal) => testMetaConnection({ apiKey: key, model }, signal));
 
-  void (async () => {
-    try {
-      const hasStored = await hasStoredApiKey();
-      connection.setHasStored(hasStored);
-      if (!apiKey && hasStored) {
-        const storedKey = await loadStoredApiKey();
-        if (storedKey) {
-          await connection.test(storedKey).catch(() => undefined);
-          connection.setSource('stored');
-          connection.setHasStored(true);
+  // One shared background verification: test the saved (or environment) key
+  // silently at startup, so a returning user is never asked to re-enter a
+  // working key. Single-flighted - readiness() awaits this instead of
+  // starting a second probe that would collide with it.
+  let savedVerification: Promise<void> | null = null;
+  function verifySavedKey(): Promise<void> {
+    if (!savedVerification) {
+      savedVerification = (async () => {
+        try {
+          const stored = await hasStoredApiKey();
+          connection.setHasStored(stored);
+          if (connection.info().verified) return;
+          if (apiKey) {
+            await connection.test(null);
+          } else if (stored) {
+            const storedKey = await loadStoredApiKey();
+            if (!storedKey) return;
+            await connection.test(storedKey);
+            connection.setSource('stored');
+          }
+        } catch {
+          // A saved key that fails to verify behaves like no key: the UI
+          // prompts once, with the real state, instead of on every launch.
         }
-      }
-    } catch {
-      // Non-blocking initialization
+      })();
     }
-  })();
+    return savedVerification;
+  }
+  void verifySavedKey();
   const desktop = new UbuntuDesktop(window, () => [controls]);
   let shortcut: typeof emergencyShortcuts[number] | null = null;
   let disposed = false;
@@ -125,16 +138,9 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
         desktopSupported = false;
         issues.push(error instanceof Error ? error.message : 'Desktop preflight failed.');
       }
-      if (!connection.getKey()) {
-        try {
-          const storedKey = await loadStoredApiKey();
-          if (storedKey) {
-            await connection.test(storedKey).catch(() => undefined);
-            connection.setSource('stored');
-            connection.setHasStored(true);
-          }
-        } catch { /* Ignore */ }
-      }
+      // Await the single-flighted background verification so Recheck never
+      // starts a second probe and never reports stale "untested" state.
+      await verifySavedKey();
       const info = connection.info();
       if (!info.configured) issues.unshift('Connect your Meta API key in Settings.');
       else if (!info.verified) issues.unshift('Test your Meta connection in Settings before starting.');

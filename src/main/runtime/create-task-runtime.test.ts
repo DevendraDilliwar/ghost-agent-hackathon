@@ -7,6 +7,7 @@ import { createTaskRuntime } from './create-task-runtime';
 const stubs = vi.hoisted(() => ({
   preflight: vi.fn(), capture: vi.fn(), execute: vi.fn(), decide: vi.fn(), parseIntent: vi.fn(), verifyText: vi.fn(),
   probe: vi.fn(), modelOptions: vi.fn(), register: vi.fn(), unregister: vi.fn(), isRegistered: vi.fn(),
+  saveKey: vi.fn(), loadKey: vi.fn(), clearKey: vi.fn(), hasKey: vi.fn(),
 }));
 vi.mock('electron', () => ({ globalShortcut: { register: stubs.register, unregister: stubs.unregister, isRegistered: stubs.isRegistered } }));
 vi.mock('../../desktop/linux/ubuntu-desktop', () => ({ UbuntuDesktop: class {
@@ -15,6 +16,8 @@ vi.mock('../../desktop/linux/ubuntu-desktop', () => ({ UbuntuDesktop: class {
   execute = stubs.execute;
 } }));
 vi.mock('../../providers/meta/meta-request', () => ({ testMetaConnection: stubs.probe }));
+vi.mock('../config/secure-store', () => ({ saveStoredApiKey: stubs.saveKey, loadStoredApiKey: stubs.loadKey,
+  clearStoredApiKey: stubs.clearKey, hasStoredApiKey: stubs.hasKey }));
 vi.mock('../../providers/meta/meta-computer-model', () => ({ MetaComputerModel: class {
   constructor(options: unknown) { stubs.modelOptions(options); }
   decide = stubs.decide;
@@ -38,6 +41,10 @@ beforeEach(() => {
   stubs.isRegistered.mockImplementation((accelerator: string) => registered.has(accelerator));
   stubs.unregister.mockImplementation((accelerator: string) => { registered.delete(accelerator); });
   stubs.probe.mockResolvedValue(undefined);
+  stubs.hasKey.mockResolvedValue(false);
+  stubs.loadKey.mockResolvedValue(null);
+  stubs.saveKey.mockResolvedValue(undefined);
+  stubs.clearKey.mockResolvedValue(undefined);
   stubs.preflight.mockResolvedValue(undefined);
   stubs.capture.mockResolvedValue({ image: 'data:image/png;base64,dGVzdA==', width: 800, height: 600,
     desktopWidth: 800, desktopHeight: 600, activeWindowId: '100', capturedAt: Date.now() });
@@ -202,6 +209,44 @@ describe('model connection across tasks in one app session', () => {
     expect(await runtime.readiness()).toMatchObject({ ready: false, desktopSupported: false,
       modelConfigured: true, modelVerified: true, issues: ['Test desktop unavailable.'] });
     expect(runtime.connection.info().verified).toBe(true);
+    expect((await runtime.readiness()).ready).toBe(true);
+    expect(stubs.probe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('saved-key auto-verification at startup', () => {
+  it('verifies a stored key silently without asking the user again', async () => {
+    stubs.hasKey.mockResolvedValue(true);
+    stubs.loadKey.mockResolvedValue('stored-key');
+    const runtime = setup();
+    await vi.waitFor(() => expect(runtime.connection.info()).toMatchObject({ configured: true, verified: true, source: 'stored' }));
+    expect((await runtime.readiness()).ready).toBe(true);
+    expect(stubs.probe).toHaveBeenCalledTimes(1);
+    const task = runtime.start(configuration);
+    await vi.waitFor(() => expect(runtime.controller.getSnapshot().status).toBe('verifying'));
+    runtime.controller.confirm(task.runId!, true);
+    expect(runtime.controller.getSnapshot().status).toBe('completed');
+    expect(stubs.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a failing stored key as untested and probes only once', async () => {
+    stubs.hasKey.mockResolvedValue(true);
+    stubs.loadKey.mockResolvedValue('expired-key');
+    stubs.probe.mockRejectedValueOnce(new Error('Invalid key'));
+    const runtime = setup();
+    await vi.waitFor(() => expect(stubs.probe).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(runtime.connection.info()).toMatchObject({ configured: true, verified: false }));
+    const ready = await runtime.readiness();
+    expect(ready.modelVerified).toBe(false);
+    expect(ready.issues).toContain('Test your Meta connection in Settings before starting.');
+    expect(stubs.probe).toHaveBeenCalledTimes(1);
+    expect(() => runtime.start(configuration)).toThrow('Test your Meta connection');
+  });
+
+  it('auto-verifies an environment-provided key without changing its source', async () => {
+    vi.stubEnv('META_API_KEY', 'env-key');
+    const runtime = setup();
+    await vi.waitFor(() => expect(runtime.connection.info()).toMatchObject({ configured: true, verified: true, source: 'environment' }));
     expect((await runtime.readiness()).ready).toBe(true);
     expect(stubs.probe).toHaveBeenCalledTimes(1);
   });

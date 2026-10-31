@@ -1,5 +1,6 @@
 import React from 'react';
 import { MousePointer, Terminal, Key, Eye, Clock, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 import type { AgentAction } from '../../../../shared/contracts/task';
 
 interface ActionTimelineProps {
@@ -127,22 +128,25 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
 
             {isAwaiting && onApproveAction && onRejectAction && (
               <div className="mt-1 pt-2 border-t border-amber-200 flex items-center justify-end gap-2 pl-7">
-                <button
+                <Button
                   type="button"
                   disabled={disabled}
                   onClick={() => onRejectAction(action.id)}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium text-[11px] transition-colors cursor-pointer"
+                  variant="secondary"
+                  size="sm"
                 >
                   Reject & Stop
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   disabled={disabled}
                   onClick={() => onApproveAction(action.id)}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                  variant="default"
+                  size="sm"
+                  className="font-bold"
                 >
                   <span>Approve & Auto-Run Rest</span>
-                </button>
+                </Button>
               </div>
             )}
           </div>

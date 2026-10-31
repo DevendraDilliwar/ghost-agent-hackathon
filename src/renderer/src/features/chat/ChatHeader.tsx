@@ -1,4 +1,5 @@
 import { Eye, ShieldCheck, Sparkles, Settings2, ExternalLink, Square } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 import type { AgentStatus } from '../../../../shared/contracts/task';
 import { statusLabels } from '../tasks/task-presentation';
 
@@ -76,35 +77,39 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, tokens,
             {tokens} tokens
           </span>
         )}
-        <button
+        <Button
           type="button"
           onClick={onOpenSetup}
           disabled={settingsDisabled}
           aria-haspopup="dialog"
           title={settingsDisabled ? 'Stop the active task to edit configuration.' : 'Configure Meta API keys and system settings.'}
-          className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-40"
+          variant="secondary"
+          size="sm"
         >
           <Settings2 className="h-3.5 w-3.5 text-slate-400" />
           <span>Settings</span>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={!connected}
           onClick={onCompact}
-          className="flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-slate-800 disabled:opacity-40"
+          variant="default"
+          size="sm"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           <span>Floating HUD</span>
-        </button>
+        </Button>
         {showStop && (
-          <button
+          <Button
             type="button"
             onClick={onStop}
-            className="flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-rose-500"
+            variant="destructive"
+            size="sm"
+            className="font-bold"
           >
             <Square className="h-3 w-3 fill-white" />
             <span>Stop</span>
-          </button>
+          </Button>
         )}
       </div>
     </header>

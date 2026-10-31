@@ -88,15 +88,6 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
   background-color: #f8fafc;
 }
 
-/* Interactive button feedback */
-button:not(:disabled):hover {
-  filter: brightness(0.97);
-}
-
-button:not(:disabled):active {
-  transform: translateY(1px);
-}
-
 /* Voice Wave Animation */
 @keyframes voice-wave {
   0%, 100% {
