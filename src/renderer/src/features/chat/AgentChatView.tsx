@@ -19,7 +19,8 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('full_access');
   const [screenConsent, setScreenConsent] = useState(true);
   const [isolatedEnvironment, setIsolatedEnvironment] = useState(true);
-  const maxSteps = 15;
+  // Fixed headroom for multi-app tasks. Validation allows 1-30; the wall clock still caps every run at five minutes.
+  const maxSteps = 25;
   const task = runtime.snapshot;
   const status = task?.status ?? 'idle';
   const active = isActiveTask(status);
