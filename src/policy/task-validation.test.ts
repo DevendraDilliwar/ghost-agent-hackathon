@@ -7,11 +7,12 @@ const valid = { goal: 'Open the test page', maxSteps: 15, approvalMode: 'ask_app
 describe('task boundary validation', () => {
   it('normalizes the goal and accepts explicit consent', () => {
     expect(validateRunConfiguration({ ...valid, goal: '  Open test page  ' }).goal).toBe('Open test page');
+    expect(validateRunConfiguration({ ...valid, approvalMode: 'full_access' }).approvalMode).toBe('full_access');
   });
   it.each([
     { ...valid, goal: '' }, { ...valid, goal: 'x'.repeat(2001) }, { ...valid, maxSteps: 0 },
     { ...valid, maxSteps: 31 }, { ...valid, maxSteps: 2.5 }, { ...valid, screenConsent: false },
-    { ...valid, isolatedEnvironment: false }, { ...valid, approvalMode: 'full_access' }, null,
+    { ...valid, isolatedEnvironment: false }, { ...valid, approvalMode: 'invalid_mode' }, null,
   ])('rejects an invalid or unconsented run', value => {
     expect(() => validateRunConfiguration(value)).toThrow();
   });

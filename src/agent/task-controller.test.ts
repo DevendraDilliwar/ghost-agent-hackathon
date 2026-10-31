@@ -58,6 +58,14 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().actions[0]?.status).toBe('executed');
   });
 
+  it('executes proposed input immediately without pausing when in full_access mode', async () => {
+    const { controller, desktop } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    expect(desktop.execute).toHaveBeenCalled();
+    expect(controller.getSnapshot().status).not.toBe('awaiting_approval');
+  });
+
   it('rejects a second concurrent run without dispatching more work', async () => {
     const { controller, desktop } = setup();
     controller.start(configuration);

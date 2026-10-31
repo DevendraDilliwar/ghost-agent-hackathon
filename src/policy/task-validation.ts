@@ -18,13 +18,16 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
   if (typeof input.goal !== 'string' || !input.goal.trim() || input.goal.trim().length > 2000) {
     throw new Error('Enter a goal between 1 and 2,000 characters.');
   }
-  if (input.approvalMode !== 'ask_approval') throw new Error('This build requires approval for every action.');
+  const mode = input.approvalMode ?? 'full_access';
+  if (!['ask_approval', 'full_access', 'approve_for_me'].includes(String(mode))) {
+    throw new Error('Unsupported approval mode.');
+  }
   if (input.screenConsent !== true || input.isolatedEnvironment !== true) {
     throw new Error('Confirm cloud screen processing and the isolated test environment before starting.');
   }
   return {
     goal: input.goal.trim(),
-    approvalMode: 'ask_approval',
+    approvalMode: (mode === 'ask_approval' ? 'ask_approval' : 'full_access') as RunConfiguration['approvalMode'],
     maxSteps: integer(input.maxSteps, 1, 30),
     screenConsent: true,
     isolatedEnvironment: true,

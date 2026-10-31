@@ -131,7 +131,7 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
                   type="button"
                   disabled={disabled}
                   onClick={() => onRejectAction(action.id)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-[11px] transition-colors"
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-[11px] transition-colors cursor-pointer"
                 >
                   Reject & Stop
                 </button>
@@ -139,9 +139,9 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
                   type="button"
                   disabled={disabled}
                   onClick={() => onApproveAction(action.id)}
-                  className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-[11px] transition-colors shadow-sm"
+                  className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 hover:brightness-110 text-slate-950 font-bold text-[11px] transition-all shadow-md cursor-pointer flex items-center gap-1.5"
                 >
-                  Approve & Execute
+                  <span>⚡ Approve & Auto-Run Rest</span>
                 </button>
               </div>
             )}

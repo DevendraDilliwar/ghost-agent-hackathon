@@ -1,4 +1,4 @@
-import type { AgentAction, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
+import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
 import type { DesktopPort, ModelPort } from './ports';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
 import { defaultGroundingEngine } from './vision/ui-grounding';
@@ -31,6 +31,7 @@ export class TaskController {
   private pending: { action: DesktopCommand; observation: ScreenObservation } | null = null;
   private now: () => number;
   private clarifications: string[] = [];
+  private approvalMode: ApprovalMode = 'full_access';
 
   constructor(private readonly dependencies: ControllerDependencies) {
     this.now = dependencies.now ?? Date.now;
@@ -45,6 +46,7 @@ export class TaskController {
     this.clearDeadline();
     this.pending = null;
     this.clarifications = [];
+    this.approvalMode = configuration.approvalMode ?? 'full_access';
     this.state = {
       ...idleSnapshot(), revision: this.state.revision, runId: this.dependencies.id(), goal: configuration.goal,
       maxSteps: configuration.maxSteps, status: 'preparing',
@@ -215,12 +217,25 @@ export class TaskController {
         return;
       }
       const id = this.dependencies.id();
+      const isAuto = this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me';
       const view: AgentAction = {
         id, type: action.type === 'keypress' ? 'key_press' : action.type === 'screenshot' ? 'verify' : action.type,
-        description: this.dependencies.describe(action), timestamp: this.timestamp(), status: 'awaiting_approval',
+        description: this.dependencies.describe(action), timestamp: this.timestamp(),
+        status: isAuto ? 'pending' : 'awaiting_approval',
         ...('x' in action ? { coordinates: { x: action.x, y: action.y } } : {}),
         ...('text' in action ? { text: action.text } : {}),
       };
+
+      if (isAuto) {
+        this.pending = null;
+        this.update({
+          status: 'acting', pendingActionId: null, message: this.dependencies.describe(action),
+          actions: [...this.state.actions.filter(item => item.status !== 'pending'), view],
+        });
+        this.launch({ action, observation });
+        return;
+      }
+
       this.pending = { action, observation };
       this.update({
         status: 'awaiting_approval', pendingActionId: id,

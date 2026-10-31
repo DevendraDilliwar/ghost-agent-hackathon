@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
-import { Send, Mic, MicOff, Sparkles, Check, Globe } from 'lucide-react';
-import type { RunConfiguration } from '../../../../shared/contracts/task';
+import { Send, Mic, MicOff, Sparkles, Check, Globe, Zap, Shield } from 'lucide-react';
+import type { ApprovalMode, RunConfiguration } from '../../../../shared/contracts/task';
 
 interface TaskComposerProps {
   connected: boolean;
@@ -63,6 +63,7 @@ export function TaskComposer({
 }: TaskComposerProps) {
   const [goal, setGoal] = useState(initialGoal);
   const [maxSteps, setMaxSteps] = useState(initialLimit);
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('full_access');
   const [screenConsent, setScreenConsent] = useState(true);
   const [isolatedEnvironment, setIsolatedEnvironment] = useState(true);
   const [isListening, setIsListening] = useState(false);
@@ -148,7 +149,7 @@ export function TaskComposer({
     event?.preventDefault();
     if (!canSubmit) return;
     if (!modelReady) { onOpenSetup(); return; }
-    onLaunch({ goal: goal.trim(), maxSteps, approvalMode: 'ask_approval', screenConsent, isolatedEnvironment });
+    onLaunch({ goal: goal.trim(), maxSteps, approvalMode, screenConsent, isolatedEnvironment });
   }
 
   function keyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -278,10 +279,38 @@ export function TaskComposer({
             disabled={!canSubmit}
             className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-600 to-sky-500 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02] hover:shadow-indigo-500/40 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable switches below' : 'Execute Universal Task'}
+            {busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable switches below' : approvalMode === 'full_access' ? '⚡ Execute Autonomously' : 'Execute Step-by-Step'}
             <Send className="h-3.5 w-3.5" />
           </button>
         </div>
+      </div>
+
+      {/* Autonomous Full Control vs Supervised Approval Selector */}
+      <div className="grid grid-cols-2 gap-2 p-1 bg-[#090d18] border border-white/10 rounded-2xl text-xs">
+        <button
+          type="button"
+          onClick={() => setApprovalMode('full_access')}
+          className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-bold transition-all cursor-pointer ${
+            approvalMode === 'full_access'
+              ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-sky-600 text-white shadow-md shadow-indigo-600/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Zap className="h-3.5 w-3.5 text-amber-300 fill-amber-300" />
+          <span>⚡ Full Autonomous Mode</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setApprovalMode('ask_approval')}
+          className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-semibold transition-all cursor-pointer ${
+            approvalMode === 'ask_approval'
+              ? 'bg-slate-800 text-white shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Shield className="h-3.5 w-3.5 text-sky-400" />
+          <span>🛡️ Step-by-Step Approval</span>
+        </button>
       </div>
 
       {/* Permissions Switches as Modern Cards */}
