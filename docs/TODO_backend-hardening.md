@@ -11,6 +11,11 @@ Status: initial repository inventory, 2026-10-29, retained as a historical basel
 
 ## Audit Findings
 
+- [x] **FINDING-META-001 [Medium] [Incomplete model decisions]**:
+  - **Issue**: The user reported `Meta returned an incomplete or unsupported response. No action was executed.` on the Mousepad test. The parser collapsed non-completed status and an invalid output list into one message, discarding `incomplete_details.reason`. Requests allowed only 1,200 output tokens with default reasoning effort, although reasoning and visible output share that budget. The user's failed payload is unavailable; token exhaustion is a hypothesis, not a confirmed diagnosis.
+  - **Risk**: A truncated decision stops the task without enough detail to distinguish token exhaustion, provider filtering, upstream failure, or an invalid response schema. An overly small allowance can consume the entire response during reasoning.
+  - **Proposed Fix**: Use a bounded 4,096-token allowance with low reasoning for one-step decisions; distinguish known failure reasons using fixed messages and validated numeric usage. Reject partial tool items even inside a completed response. Never execute partial output, echo raw error bodies, or automatically repeat a request. Sources: [Meta reasoning](https://dev.meta.ai/docs/reasoning), [computer-use incomplete responses](https://dev.meta.ai/docs/computer-use#handle-done-and-incomplete).
+
 - [x] **FINDING-STOP-001 [High] [Emergency Stop registration]**:
   - **Issue**: The user's screenshots show Meta text API and Screen & input Ready, but Emergency Stop unavailable and Send disabled. The runtime attempted only `CommandOrControl+Shift+Escape` once at construction. Recheck desktop returned that cached failure instead of retrying registration. The exact owner of the conflicting shortcut is unconfirmed; Electron documents that shortcuts already taken by another application fail registration.
   - **Risk**: A single unavailable key combination prevents every task from starting for the entire app session, even with a verified model connection and supported desktop.
@@ -47,6 +52,8 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 
 ## Verified OK (No Action)
 
+- [x] **OK-META-001** The fixed Responses endpoint, native `computer` plus handoff function definitions, image submission, completed-response parser, and action validation accepted live Spark 1.3 responses for a synthetic blank-editor goal. Preserve these boundaries. Two real API requests returned completed typing actions; neither invoked a desktop driver. The original 1,200/default request also succeeded on this synthetic input, so the user's failure has not been reproduced.
+
 - [x] **OK-STOP-001** Preserve main-process readiness enforcement, both per-run consent checks, action review, and existing Stop cancellation. Regression coverage confirms a fallback callback stops the current run and prevents approval of the interrupted action. A registration failure does not clear or retest the API key. No OS shortcuts, permissions, packages, or credential storage are changed.
 
 - [x] **OK-KEYREUSE-001** Main-process session key lifetime is already independent of task lifetime. New integration tests verify one connection probe supports successive completed tasks, task failure/Stop do not clear verification, and desktop rechecks recover without another API probe. Metadata never returns the key. Preserve this implementation; no credential persistence, main-process restart workaround, or relaxed desktop checks are justified by this UI finding.
@@ -61,6 +68,12 @@ The Ubuntu Wayland/nut.js mismatch and unknown API entitlement are feasibility g
 No authentication flow, encryption implementation, API middleware, backup system, or production monitoring has been verified as adequate. Absence of code is not a passed quality check.
 
 ## Remediation Plan
+
+- [x] **FIX-META-001 [Incomplete model decisions]**:
+  - **Change**: Set `max_output_tokens: 4096` and `reasoning.effort: low`. Separate token-limit, content-filter, failed-status, unsupported-status, invalid-output, and partial-item errors. For runs with no proposed actions, recovery explicitly states that Ghost Agent sent no mouse/keyboard input. Credential setup and action authorization stay unchanged.
+  - **Rollback**: Revert `meta-computer-model.ts`, `parse-response.ts`, their provider tests, and `RecoveryPanel.tsx` together. No dependency or data migration is involved. The per-request ceiling increases, but automatic retry is not introduced and the existing run allowance remains unchanged.
+  - **Validation**: `npm run check` passes with 108 tests in 10 files, TypeScript, ESLint, builds, and standalone preload checks. Nine new provider cases cover failure classification, partial-action refusal, no auto-retry, and sanitization. Four recovery server-rendering assertions pass. Live synthetic probes: original request HTTP 200/completed/type, 3,084 input / 299 output / 215 reasoning tokens, 4,481 ms; updated request HTTP 200/completed/type, 3,084 input / 172 output / 89 reasoning tokens, 3,430 ms. These two samples establish compatibility only, not a latency benchmark or reproduction of the user's failure. Two successful real requests consumed API credits; screenshots were generated test images, and keys/raw responses were not logged.
+- [ ] **FIX-META-LIVE-001 [User VM acceptance]**: Install this source update in the VM, restart, connect once, and retry the short Mousepad goal. Verify the actual proposed input and its execution. If the request fails again, use the new specific error to diagnose it. Full native task success remains unverified.
 
 - [x] **FIX-STOP-001 [Emergency Stop registration]**:
   - **Change**: Try Ctrl + Shift + Escape, Ctrl + Alt + Shift + Escape, then Ctrl + Shift + F12. Keep a working registration across tasks; retry failed/lost registrations on Recheck. Expose the selected label through existing readiness and restricted controls metadata. Show explicit permission guidance on the disabled send button.
@@ -108,6 +121,8 @@ No fixes are proposed for nonexistent components. The following scoped audits be
 - [x] **AUDIT-006** Record that no backend patch is proposed in this documentation-only stage. Future confirmed findings must receive a unique FINDING ID, severity, evidence, minimal change, and matching FIX task with rollback and validation before a patch is added here.
 
 ## Commands
+
+- [x] **CHECK-META-001** `npm run check` and `git diff --check` pass after the Meta response changes. Synthetic live requests used the same adapter with a generated editor image; no real desktop was captured or controlled.
 
 - [x] **CHECK-STOP-AUTO-001** The local gate below passes. Run it in CI/on the updated VM checkout as needed; complete FIX-STOP-LIVE-001 separately in Xubuntu. Automated tests use mocked Electron, model, and desktop adapters, so no API credit is consumed.
 

@@ -21,7 +21,8 @@ export class MetaComputerModel implements ModelPort {
 
   async decide(input: Parameters<ModelPort['decide']>[0]) {
     const response = await requestMeta(this.config, {
-      max_output_tokens: 1200, instructions,
+      // The output allowance includes private reasoning, not only action JSON.
+      max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions,
       tools: [
         { type: 'computer' },
         { type: 'function', name: 'request_user_help', description: 'Pause for the user to manually complete CAPTCHA, login, 2FA, or provide missing information. Never ask for secrets in chat.',

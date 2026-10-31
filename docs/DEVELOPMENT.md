@@ -94,6 +94,8 @@ The source checklist describes implemented code. RUNTIME-007 is the acceptance g
 
 Each computer-use model request is an independent one-step decision using the current screenshot, goal, and action summary with `store: false`. Only the first proposed action is considered, and it still needs user approval. This avoids running a long plan across changed screens. Provider retention guarantees must be checked separately; the app does not promise fully local processing.
 
+One-step requests use low reasoning and a 4,096-token output allowance, which includes reasoning tokens. Incomplete responses never dispatch input or trigger automatic retries. Known token-limit and content-filter reasons are displayed separately from unsupported response formats.
+
 The input adapter invokes only a fixed `xdotool` executable and supported argument lists. Typed content is supplied through stdin. Terminal commands are entered through visible terminal UI; the agent does not expose a hidden shell executor. This is not an OS sandbox: the test environment itself must be disposable, and input already submitted cannot be undone by Stop.
 
 Screenshots, goals, and action text remain in memory for the current run until replaced or the app closes. Pause and user takeover clear the current screenshot and invalidate pending approvals. The model can call `request_user_help` for verification/login/clarification; recognition is model-assisted and not guaranteed. Take control is also available manually. No new captures/actions/model requests are dispatched while waiting; a request already sent cannot be recalled from Meta. Done — resume takes a fresh screenshot. The five-minute deadline still includes pauses and handoff time. No raw screenshot journal or credential persistence has been added. Export/redaction, detection of arbitrary manual interference, robust visual state-change checks, and broader desktop support remain pending.
@@ -139,13 +141,13 @@ Validation on Node 22.23.2 and npm 10.9.8:
 | Check | Current result |
 | --- | --- |
 | Typecheck and lint | Passed |
-| Unit tests | 87 passed across lifecycle/handoff/clarification, connection credentials, provider parsing/probes, IPC senders, capture exclusion, input process boundaries, and policy |
+| Unit tests | 108 passed across lifecycle/handoff/clarification, connection reuse, emergency shortcuts, provider parsing/probes, IPC senders, capture exclusion, input process boundaries, and policy |
 | Production build | Main, two standalone CommonJS preloads, and both renderer pages passed; sandboxed-preload output gate passed |
 | Native driver CLI | Installed xdotool inspected; stdin typing option verified from its help text; no input dispatched |
 | Layer boundaries | Six invalid import probes rejected; a valid shared-contract import accepted |
-| Electron launch | Not verified; official runtime download timed out after a bounded retry |
+| Electron launch | The user has launched the app in the Xubuntu VM. Native input/shortcut delivery has not been verified by the assistant |
 | Browser UI inspection | Not performed; no browser is available through the UI tool |
-| Live Meta/desktop requests | A prior text-only Spark 1.3 request returned HTTP 200/completed. Current computer-use, handoff, and desktop integration remain untested live. Automated checks use synthetic screenshots and mocked ports |
+| Live Meta/desktop requests | Text access was previously verified. Two synthetic blank-editor requests using computer plus handoff tools returned HTTP 200/completed and parsed typing actions, including the updated 4,096-token/low-reasoning request. No actual desktop capture or input was used; the user's incomplete response was not reproduced. Native end-to-end execution and live handoff behavior remain unverified |
 | Packaging and GitHub CI | Not executed |
 
 Source checks do not establish task success rate, speed, cost, isolation, or packaged behavior. Those still require the evaluation protocol in [demo and submission](DEMO_AND_SUBMISSION.md).

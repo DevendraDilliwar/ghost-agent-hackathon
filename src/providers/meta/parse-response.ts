@@ -14,11 +14,26 @@ function tokens(value: unknown): number {
 
 export function parseMetaDecision(value: unknown, observation: ScreenObservation): ModelDecision {
   const response = object(value);
-  if (response.status !== 'completed' || !Array.isArray(response.output)) {
-    throw new Error('Meta returned an incomplete or unsupported response. No action was executed.');
+  if (response.status === 'incomplete') {
+    const details = response.incomplete_details;
+    const reason = details && typeof details === 'object' && 'reason' in details ? details.reason : null;
+    if (reason === 'max_output_tokens') {
+      const usage = response.usage;
+      const count = usage && typeof usage === 'object' && 'output_tokens' in usage ? usage.output_tokens : null;
+      const usageText = typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? ' (' + count + ' output tokens used)' : '';
+      throw new Error('Meta reached the response token limit before finishing its decision' + usageText + '. No action from this response was executed. Try a smaller task; if this repeats, the model response budget needs adjustment.');
+    }
+    if (reason === 'content_filter') throw new Error('Meta stopped this response because of a content filter. No action from this response was executed. Review the task and screen content.');
+    throw new Error('Meta returned an incomplete decision without a supported reason. No action from this response was executed.');
   }
+  if (response.status === 'failed') throw new Error('Meta could not complete this decision. No action from this response was executed. Try again later.');
+  if (response.status !== 'completed') throw new Error('Meta returned an unsupported response status. No action from this response was executed.');
+  if (!Array.isArray(response.output)) throw new Error('Meta returned an invalid output list. No action from this response was executed.');
   const usage = object(response.usage);
   const output = response.output.map(object);
+  if (output.some(item => item.status !== undefined && item.status !== null && item.status !== 'completed')) {
+    throw new Error('Meta returned an incomplete output item. No action from this response was executed.');
+  }
   const calls = output.filter(item => item.type === 'computer_call');
   const functions = output.filter(item => item.type === 'function_call');
   if (calls.length + functions.length > 1) throw new Error('Multiple tool calls in one decision are not supported.');

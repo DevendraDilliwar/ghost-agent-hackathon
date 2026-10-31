@@ -20,7 +20,8 @@ describe('Meta computer-use adapter', () => {
     expect(options?.redirect).toBe('error');
     const body = JSON.parse(String(options?.body));
     expect(body.store).toBe(false);
-    expect(body.max_output_tokens).toBe(1200);
+    expect(body.max_output_tokens).toBe(4096);
+    expect(body.reasoning).toEqual({ effort: 'low' });
     expect(String(options?.body)).not.toContain('test-key');
     expect(decision.action).toEqual({ type: 'click', x: 50, y: 60, button: 'left' });
   });
@@ -33,6 +34,44 @@ describe('Meta computer-use adapter', () => {
 
   it('refuses an incomplete response rather than executing partial output', () => {
     expect(() => parseMetaDecision({ ...response, status: 'incomplete' }, frame)).toThrow('incomplete');
+  });
+
+  it('reports token exhaustion without accepting a partial action or retrying the request', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      ...response, status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' },
+      usage: { input_tokens: 50, output_tokens: 4096 },
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    await expect(model.decide({ goal: 'Type Hello', observation: frame, history: [], signal: new AbortController().signal }))
+      .rejects.toThrow('response token limit before finishing its decision (4096 output tokens used)');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [{ status: 'incomplete', incomplete_details: { reason: 'content_filter' } }, 'content filter'],
+    [{ status: 'incomplete', incomplete_details: { reason: 'private-provider-details' } }, 'incomplete decision without a supported reason'],
+    [{ status: 'failed', error: { message: 'private-provider-details' } }, 'could not complete'],
+    [{ status: 'private-provider-details' }, 'unsupported response status'],
+    [{ status: undefined }, 'unsupported response status'],
+    [{ output: null }, 'invalid output list'],
+  ])('distinguishes response failures without exposing raw provider data (%j)', (patch, message) => {
+    const parse = () => parseMetaDecision({ ...response, ...patch }, frame);
+    expect(parse).toThrow(message);
+    expect(parse).not.toThrow('private-provider-details');
+  });
+
+  it('does not put unvalidated token values into the failure message', () => {
+    for (const count of ['private-token-data', -1, Infinity, 1.5]) {
+      const parse = () => parseMetaDecision({ ...response, status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, usage: { output_tokens: count } }, frame);
+      expect(parse).toThrow('response token limit');
+      expect(parse).not.toThrow('output tokens used');
+      expect(parse).not.toThrow('private-token-data');
+    }
+  });
+
+  it('rejects an unfinished tool item even inside a completed response', () => {
+    expect(() => parseMetaDecision({ ...response, output: [{ ...response.output[0], status: 'incomplete' }] }, frame)).toThrow('incomplete output item');
+    expect(parseMetaDecision({ ...response, output: [{ ...response.output[0], status: 'completed' }] }, frame).action).toEqual({ type: 'click', x: 50, y: 60, button: 'left' });
   });
 
   it('validates model coordinates and token usage', () => {
