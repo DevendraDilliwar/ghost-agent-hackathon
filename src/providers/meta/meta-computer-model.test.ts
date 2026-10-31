@@ -134,4 +134,17 @@ describe('Meta computer-use adapter', () => {
       vi.fn<typeof fetch>().mockRejectedValue(new Error('private network diagnostics test-key')))).rejects.toThrow('Could not reach Meta');
   });
 
+  it('gives goal understanding the same output allowance as decisions', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 50, output_tokens: 20 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"summary":"Install VS Code","params":{},"missing":[]}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const result = await model.parseIntent({ goal: 'Install VS Code', clarifications: [], signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.max_output_tokens).toBe(4096);
+    expect(body.tools).toBeUndefined();
+    expect(result.intent.summary).toBe('Install VS Code');
+  });
+
 });

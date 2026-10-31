@@ -66,7 +66,8 @@ export class MetaComputerModel implements ModelPort {
       ? '\nUser clarifications:\n- ' + input.clarifications.join('\n- ')
       : '';
     const response = await requestMeta(this.config, {
-      max_output_tokens: 1024, reasoning: { effort: 'low' }, instructions: intentInstructions,
+      // Same allowance as decisions: multi-step goals need room for reasoning plus the JSON.
+      max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: intentInstructions,
       input: [{ role: 'user', content: [
         { type: 'input_text', text: 'Goal: ' + input.goal + clarificationText + '\nReturn only the JSON object.' },
       ] }],

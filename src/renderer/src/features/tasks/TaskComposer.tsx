@@ -147,6 +147,7 @@ export function TaskComposer({
   }
 
   const canSubmit = connected && !busy && Boolean(goal.trim()) && (!modelReady || (ready && screenConsent && isolatedEnvironment));
+  const submitLabel = busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable switches below' : approvalMode === 'full_access' ? 'Execute Autonomously' : 'Execute Step-by-Step';
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -239,53 +240,33 @@ export function TaskComposer({
           <p className="text-[10px] text-amber-600 mt-1">{voiceError}</p>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3" onClick={e => e.stopPropagation()}>
-          {/* Left: Voice Mic + Voice Wave + Shortcut hint */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={toggleVoice}
-              disabled={busy}
-              className={`relative flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer transition-all ${
-                isListening
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 animate-pulse'
-                  : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-              title={isListening ? 'Click to stop listening' : 'Speak task in Hindi or English'}
-            >
-              {isListening ? (
-                <>
-                  <MicOff className="h-3.5 w-3.5" />
-                  <span>Listening...</span>
-                  <div className="flex items-center gap-0.5 ml-1">
-                    <span className="voice-bar" />
-                    <span className="voice-bar" />
-                    <span className="voice-bar" />
-                    <span className="voice-bar" />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <Mic className="h-3.5 w-3.5" />
-                  <span>Voice Prompt</span>
-                </>
-              )}
-            </button>
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3" onClick={e => e.stopPropagation()}>
+          {/* Right: Voice Mic + Submit */}
+          <button
+            type="button"
+            onClick={toggleVoice}
+            disabled={busy}
+            className={`flex h-10 w-10 items-center justify-center rounded-xl cursor-pointer transition-all ${
+              isListening
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 animate-pulse'
+                : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+            title={isListening ? 'Click to stop listening' : 'Speak task in Hindi or English'}
+            aria-label={isListening ? 'Stop listening' : 'Speak task using microphone'}
+          >
+            {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </button>
 
-            <span className="hidden sm:inline-block text-[11px] text-slate-500">
-              Enter to send · Shift + Enter for new line
-            </span>
-          </div>
-
-          {/* Right: Submit Button */}
           <Button
             type="submit"
             disabled={!canSubmit}
             variant="default"
-            size="lg"
+            size="icon"
+            className="h-10 w-10"
+            title={submitLabel}
+            aria-label={submitLabel}
           >
-            {busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable switches below' : approvalMode === 'full_access' ? 'Execute Autonomously' : 'Execute Step-by-Step'}
-            <Send className="h-3.5 w-3.5" />
+            <Send className="h-4 w-4" />
           </Button>
         </div>
       </div>
