@@ -24,6 +24,8 @@ const shortcutUnavailable = 'No emergency Stop shortcut is available. Another ap
 export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow) {
   const apiKey = process.env.META_API_KEY?.trim() ?? '';
   const model = process.env.GHOST_META_MODEL === 'muse-wonder-1.0' ? 'muse-wonder-1.0' : 'muse-spark-1.3';
+  // PRISM verification rides on Wonder only when explicitly enabled; planning stays on Spark.
+  const verifyModel = process.env.GHOST_VERIFY_MODEL === 'muse-wonder-1.0' ? 'muse-wonder-1.0' : model;
   const connection = new ModelConnection(apiKey, model, (key, signal) => testMetaConnection({ apiKey: key, model }, signal));
 
   // One shared background verification: test the saved (or environment) key
@@ -63,7 +65,7 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     model: {
       decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input),
       parseIntent: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).parseIntent(input),
-      verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).verifyText(input),
+      verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifyText(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand,

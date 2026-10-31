@@ -147,4 +147,16 @@ describe('Meta computer-use adapter', () => {
     expect(result.intent.summary).toBe('Install VS Code');
   });
 
+  it('routes verification to the Wonder model when configured, keeping planning on Spark', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 60, output_tokens: 12 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"confirmed":true,"detail":"Text is visible."}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3', verifyModel: 'muse-wonder-1.0' }, request);
+    const result = await model.verifyText({ text: '75000', observation: frame, signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.model).toBe('muse-wonder-1.0');
+    expect(result).toMatchObject({ confirmed: true, inputTokens: 60, outputTokens: 12 });
+  });
+
 });

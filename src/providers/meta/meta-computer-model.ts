@@ -76,7 +76,8 @@ export class MetaComputerModel implements ModelPort {
   }
 
   async verifyText(input: Parameters<ModelPort['verifyText']>[0]) {
-    const response = await requestMeta(this.config, {
+    const config = { apiKey: this.config.apiKey, model: this.config.verifyModel ?? this.config.model };
+    const response = await requestMeta(config, {
       max_output_tokens: 512, reasoning: { effort: 'low' }, instructions: verifyInstructions,
       input: [{ role: 'user', content: [
         { type: 'input_text', text: 'Expected text: ' + input.text + '\nIs this text visible in the screenshot? Return only the JSON object.' },

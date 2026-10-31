@@ -1,6 +1,6 @@
 import type { MetaModelId } from '../../shared/contracts/model';
 
-export interface MetaConfiguration { readonly apiKey: string; readonly model: MetaModelId }
+export interface MetaConfiguration { readonly apiKey: string; readonly model: MetaModelId; readonly verifyModel?: MetaModelId }
 
 export async function requestMeta(config: MetaConfiguration, body: Record<string, unknown>, signal: AbortSignal, request: typeof fetch = fetch): Promise<unknown> {
   if (!config.apiKey) throw new Error('Connect your Meta API key in Settings first.');
