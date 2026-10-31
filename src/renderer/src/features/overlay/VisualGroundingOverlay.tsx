@@ -20,7 +20,7 @@ export function VisualGroundingOverlay({
 
   if (!screenshot) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-950/40 p-6 text-center text-slate-500">
+      <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-slate-500">
         <Eye className="mb-2 h-8 w-8 opacity-30" />
         <span className="text-xs">No desktop screenshot captured yet.</span>
       </div>
