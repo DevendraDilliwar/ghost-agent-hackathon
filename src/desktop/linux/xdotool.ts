@@ -7,8 +7,10 @@ export function runXdotool(args: string[], signal: AbortSignal, input?: string):
     const child = spawn('/usr/bin/xdotool', args, { shell: false, signal, timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'] });
     let output = '';
     let settled = false;
+    // Name the failing subcommand (never raw output) so a mid-run failure traces to one step.
+    const step = args[0] ?? 'input';
     const fail = () => {
-      if (!settled) { settled = true; reject(new Error('Desktop input failed or was interrupted. Check the desktop before continuing.')); }
+      if (!settled) { settled = true; reject(new Error('Desktop input failed or was interrupted. Step: ' + step + '. Check the desktop before continuing.')); }
     };
     child.on('error', fail);
     child.stdout.on('data', (chunk: Buffer) => {
