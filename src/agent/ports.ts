@@ -30,6 +30,8 @@ export interface ModelDecision {
   readonly actions?: DesktopCommand[];
   /** Terminal command to run instead of a desktop action. Never combined with action. */
   readonly shell?: ShellCall;
+  /** Computer actions returned without a screenshot (text mode). The controller captures fresh, then validates. */
+  readonly pendingActions?: unknown[];
   readonly message: string;
   readonly warnings: string[];
   readonly inputTokens: number;

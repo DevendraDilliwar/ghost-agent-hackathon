@@ -130,8 +130,12 @@ describe('Meta computer-use adapter', () => {
     expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: 'x'.repeat(2001) }) }] }, frame)).toThrow('invalid shell call');
   });
 
-  it('rejects a desktop action that arrives without a screenshot to validate it against', () => {
-    expect(() => parseMetaDecision(response, undefined)).toThrow('without a screenshot');
+  it('holds desktop actions unvalidated when no screenshot is available yet', () => {
+    const decision = parseMetaDecision(response, undefined);
+    expect(decision.action).toBeNull();
+    expect(decision.pendingActions).toEqual([{ type: 'click', x: 50, y: 60, button: 'left' }]);
+    expect(() => parseMetaDecision({ ...response, output: [{ type: 'computer_call', actions: [] }] }, undefined)).toThrow('invalid action list');
+    expect(() => parseMetaDecision({ ...response, output: [{ type: 'computer_call', actions: new Array(21).fill({ type: 'wait' }) }] }, undefined)).toThrow('invalid action list');
   });
 
   it('decides from text alone after a terminal command, sending no screenshot', async () => {

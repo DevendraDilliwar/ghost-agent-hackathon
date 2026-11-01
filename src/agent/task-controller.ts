@@ -303,7 +303,8 @@ export class TaskController {
           const verifyInputTokens = this.state.inputTokens + check.inputTokens;
           const verifyOutputTokens = this.state.outputTokens + check.outputTokens;
           this.state = { ...this.state, inputTokens: verifyInputTokens, outputTokens: verifyOutputTokens };
-          if (verifyInputTokens > 60_000 || verifyOutputTokens > 8_000) {
+          const verifyBudget = this.tokenBudget();
+          if (verifyInputTokens > verifyBudget.input || verifyOutputTokens > verifyBudget.output) {
             this.fail('The run token allowance was reached. No further actions will be dispatched.');
             return;
           }
@@ -415,7 +416,8 @@ export class TaskController {
     const inputTokens = this.state.inputTokens + decision.inputTokens;
     const outputTokens = this.state.outputTokens + decision.outputTokens;
     this.state = { ...this.state, inputTokens, outputTokens };
-    if (inputTokens > 60_000 || outputTokens > 8_000) {
+    const budget = this.tokenBudget();
+    if (inputTokens > budget.input || outputTokens > budget.output) {
       this.fail('The run token allowance was reached. No further actions will be dispatched.');
       return;
     }
@@ -428,7 +430,8 @@ export class TaskController {
       return;
     }
     const batch = decision.actions?.length ? decision.actions : decision.action ? [decision.action] : [];
-    if (!batch.length) {
+    const pending = decision.pendingActions ?? [];
+    if (!batch.length && !pending.length) {
       const finishFrame = observation ?? await this.freshCapture(signal, generation);
       if (!finishFrame || !this.current(generation, signal)) return;
       const confirmed = await this.confirmPhaseSuccess(finishFrame, signal, generation);
@@ -450,7 +453,17 @@ export class TaskController {
 
     const frame = observation ?? await this.freshCapture(signal, generation);
     if (!frame || !this.current(generation, signal)) return;
-    const planned = batch.map(item => this.dependencies.validateAction(item, frame));
+    let planned: DesktopCommand[];
+    if (batch.length) {
+      planned = batch.map(item => this.dependencies.validateAction(item, frame));
+    } else {
+      try {
+        planned = pending.slice(0, 5).map(item => this.dependencies.validateAction(item, frame));
+      } catch {
+        this.fail('Meta returned an action outside the fresh screenshot. No input was dispatched.');
+        return;
+      }
+    }
     const room = this.state.maxSteps - this.state.actions.filter(item => item.status === 'executed').length;
     if (room <= 0) {
       this.fail('The action limit was reached. No further input will be dispatched.');
@@ -606,7 +619,8 @@ export class TaskController {
     const inputTokens = this.state.inputTokens + decision.inputTokens;
     const outputTokens = this.state.outputTokens + decision.outputTokens;
     this.state = { ...this.state, inputTokens, outputTokens };
-    if (inputTokens > 60_000 || outputTokens > 8_000) {
+    const intentBudget = this.tokenBudget();
+    if (inputTokens > intentBudget.input || outputTokens > intentBudget.output) {
       this.fail('The run token allowance was reached. No further actions will be dispatched.');
       return false;
     }
@@ -659,7 +673,8 @@ export class TaskController {
     const inputTokens = this.state.inputTokens + decision.inputTokens;
     const outputTokens = this.state.outputTokens + decision.outputTokens;
     this.state = { ...this.state, inputTokens, outputTokens };
-    if (inputTokens > 60_000 || outputTokens > 8_000) {
+    const planBudget = this.tokenBudget();
+    if (inputTokens > planBudget.input || outputTokens > planBudget.output) {
       this.fail('The run token allowance was reached. No further actions will be dispatched.');
       return false;
     }
@@ -801,7 +816,8 @@ export class TaskController {
     const inputTokens = this.state.inputTokens + check.inputTokens;
     const outputTokens = this.state.outputTokens + check.outputTokens;
     this.state = { ...this.state, inputTokens, outputTokens };
-    if (inputTokens > 60_000 || outputTokens > 8_000) {
+    const confirmBudget = this.tokenBudget();
+    if (inputTokens > confirmBudget.input || outputTokens > confirmBudget.output) {
       this.fail('The run token allowance was reached. No further actions will be dispatched.');
       return false;
     }
@@ -939,6 +955,11 @@ export class TaskController {
    * Appends the think/see cost to a step summary so slow runs show where time
    * went. Skipped when the clock never advanced, which also keeps tests exact.
    */
+  /** Token budgets scale with the step allowance so big tasks are not starved; floors keep small runs cheap. */
+  private tokenBudget(): { input: number; output: number } {
+    return { input: Math.max(60_000, this.state.maxSteps * 6_000), output: Math.max(8_000, this.state.maxSteps * 1_500) };
+  }
+
   private withTiming(summary: string, seeMs: number, label = 'see'): string {
     const thinkMs = this.lastDecideMs;
     if (thinkMs + seeMs <= 0) return summary;

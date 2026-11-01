@@ -12,6 +12,16 @@ function tokens(value: unknown): number {
   return value;
 }
 
+function parseSafetyChecks(call: Record<string, unknown>, warnings: string[]): void {
+  if (call.pending_safety_checks === undefined) return;
+  if (!Array.isArray(call.pending_safety_checks) || call.pending_safety_checks.length > 10) throw new Error('Invalid provider safety checks.');
+  for (const check of call.pending_safety_checks) {
+    const item = object(check);
+    if (typeof item.message !== 'string') throw new Error('Invalid provider safety check.');
+    warnings.push(item.message.slice(0, 1000));
+  }
+}
+
 export function parseMetaDecision(value: unknown, observation?: ScreenObservation): ModelDecision {
   const response = object(value);
   if (response.status === 'incomplete') {
@@ -68,20 +78,19 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
   let action = null;
   let actions: DesktopCommand[] | undefined;
   if (call) {
-    if (!observation) throw new Error('Meta returned a desktop action without a screenshot to validate it against. No action was executed.');
     if (!Array.isArray(call.actions) || call.actions.length < 1 || call.actions.length > 20) throw new Error('Meta returned an invalid action list.');
+    if (!observation) {
+      // Text-mode decision (after a shell step): hold the actions unvalidated so the
+      // controller captures a fresh screenshot and validates them instead of dying.
+      parseSafetyChecks(call, warnings);
+      return { action: null, pendingActions: [...call.actions], message, warnings,
+        inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+    }
     const batch = call.actions.slice(0, 5).map(entry => validateDesktopCommand(entry, observation));
     action = batch[0]!;
     actions = batch;
     if (call.actions.length > 5) warnings.push('Only the first 5 actions will execute. The agent will observe again before deciding another batch.');
-    if (call.pending_safety_checks !== undefined) {
-      if (!Array.isArray(call.pending_safety_checks) || call.pending_safety_checks.length > 10) throw new Error('Invalid provider safety checks.');
-      for (const check of call.pending_safety_checks) {
-        const item = object(check);
-        if (typeof item.message !== 'string') throw new Error('Invalid provider safety check.');
-        warnings.push(item.message.slice(0, 1000));
-      }
-    }
+    parseSafetyChecks(call, warnings);
   } else if (!message) {
     throw new Error('Meta returned neither an action nor a result.');
   }

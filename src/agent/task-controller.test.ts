@@ -184,6 +184,14 @@ describe('task lifecycle', () => {
     expect(desktop.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('scales the token budget with the step allowance', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, inputTokens: 100_000 }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 25 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(controller.getSnapshot().inputTokens).toBeGreaterThan(100_000);
+  });
+
   describe('action batches', () => {
     const batchOf3 = { ...proposed, actions: [
       { type: 'click', x: 10, y: 10, button: 'left' },
@@ -321,6 +329,29 @@ describe('task lifecycle', () => {
       await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
       expect(run).toHaveBeenCalledTimes(1);
       expect(controller.getSnapshot().message).toContain('action limit');
+    });
+
+    it('validates text-mode actions against a fresh screenshot instead of dying', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'created' }));
+      const { controller, desktop, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValueOnce(shellDecision('mkdir -p /tmp/x'))
+        .mockResolvedValueOnce({ action: null, pendingActions: [{ type: 'click', x: 10, y: 10, button: 'left' }], message: '', warnings: [], inputTokens: 10, outputTokens: 5 })
+        .mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(desktop.execute).toHaveBeenCalledTimes(1);
+      expect(desktop.execute.mock.calls[0]?.[0]).toMatchObject({ type: 'click', x: 10, y: 10 });
+    });
+
+    it('fails cleanly when text-mode actions fall outside the fresh screenshot', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'created' }));
+      const { controller, model } = setup({ shell: { run }, validateAction: () => { throw new Error('out of bounds'); } });
+      model.decide.mockResolvedValueOnce(shellDecision('mkdir -p /tmp/x'))
+        .mockResolvedValueOnce({ action: null, pendingActions: [{ type: 'click', x: 99999, y: 99999 }], message: '', warnings: [], inputTokens: 10, outputTokens: 5 });
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+      expect(controller.getSnapshot().message).toContain('outside the fresh screenshot');
     });
   });
 
