@@ -688,6 +688,36 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().handoff?.kind).toBe('manual');
   });
 
+  it('retries a dead typed-text judge instead of failing the run', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
+    model.verifyText.mockRejectedValue(new Error('Meta stopped while verifying the screen.'));
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(model.verifyText).toHaveBeenCalledTimes(4);
+    expect(controller.getSnapshot().handoff?.reason).toContain('judge');
+  });
+
+  it('retries a dead phase judge once and completes on recovery', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess.mockRejectedValueOnce(new Error('Meta stopped while verifying the screen.'))
+      .mockResolvedValue({ confirmed: true, detail: 'Success visible.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(model.verifySuccess).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands a twice-dead phase judge to the user instead of failing', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess.mockRejectedValue(new Error('Meta stopped while verifying the screen.'));
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(model.verifySuccess).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().handoff?.reason).toContain('judge did not answer');
+  });
+
   it('tells the model what the last step did before the next decision', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
@@ -733,7 +763,7 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().status).toBe('needs_user');
   });
 
-  it('fails the run when verification errors', async () => {
+  it('recovers when the typed-text judge fails once and answers on retry', async () => {
     const { controller, desktop, model } = setup();
     model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '25000' } });
     model.verifyText.mockRejectedValueOnce(new Error('Meta could not verify the screen.'));
@@ -741,8 +771,9 @@ describe('task lifecycle', () => {
     await flush();
     controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
     await flush();
-    expect(controller.getSnapshot().status).toBe('failed');
-    expect(controller.getSnapshot().message).toContain('could not verify');
+    expect(model.verifyText).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().actions[0]?.verification?.status).toBe('verified_success');
+    expect(controller.getSnapshot().status).toBe('awaiting_approval');
     expect(desktop.execute).toHaveBeenCalledTimes(1);
   });
 

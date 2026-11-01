@@ -1,5 +1,5 @@
 import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
-import type { CheckpointPort, DesktopPort, ModelPort, ShellPort } from './ports';
+import type { CheckpointPort, DesktopPort, ModelPort, ShellPort, VerifyDecision } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
@@ -306,7 +306,21 @@ export class TaskController {
           verification = { ...delta, summary: 'PRISM: typed value visible on screen (+' + delta.visualDeltaPercent + '% delta); paid re-check skipped.' };
         } else if (typed.length) {
           const verifyStart = this.now();
-          const check = await this.dependencies.model.verifyText({ text: typed.map(item => item.text).join('\n'), observation, signal });
+          const text = typed.map(item => item.text).join('\n');
+          let check: VerifyDecision;
+          try {
+            check = await this.dependencies.model.verifyText({ text, observation, signal });
+          } catch {
+            if (!this.current(generation, signal)) return;
+            try {
+              check = await this.dependencies.model.verifyText({ text, observation, signal });
+            } catch {
+              if (!this.current(generation, signal)) return;
+              // Judge silent: the typed text may be on screen, so feed the
+              // standard stall path instead of killing the run over one call.
+              check = { confirmed: false, detail: 'The typed-text judge did not answer; treated as not visible.', inputTokens: 0, outputTokens: 0 };
+            }
+          }
           verifyMs = this.now() - verifyStart;
           if (!this.current(generation, signal)) return;
           const verifyInputTokens = this.state.inputTokens + check.inputTokens;
@@ -842,11 +856,37 @@ export class TaskController {
       .filter(action => action.type === 'shell' && action.status === 'executed' && action.verification)
       .slice(-5)
       .map(action => action.description.slice(0, 200) + ' → ' + (action.verification?.summary ?? '').slice(0, 400));
-    const check = await this.dependencies.model.verifySuccess({
+    const input = {
       condition: phase.success, steps: [...phase.steps],
       ...(transcript.length ? { transcript } : {}),
       observation, signal,
-    });
+    };
+    let check: VerifyDecision;
+    try {
+      check = await this.dependencies.model.verifySuccess(input);
+    } catch {
+      if (!this.current(generation, signal)) return false;
+      try {
+        check = await this.dependencies.model.verifySuccess(input);
+      } catch {
+        if (!this.current(generation, signal)) return false;
+        // The judge call itself died twice: the work may be done, so hand the
+        // decision to the user instead of failing a finished run.
+        this.record('verify', 'failure', 'Phase judge did not answer; decision left to the user.');
+        const recovery = this.dependencies.recovery ?? defaultErrorLoop;
+        this.yieldToUser({
+          kind: 'manual',
+          reason: recovery.story({
+            phase: this.phaseContext(),
+            recentAttempts: this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
+              .map(action => action.status + ': ' + action.description),
+            verificationSummary: 'Phase work finished but the success judge did not answer. The files may already be complete — verify them before resuming or stopping.',
+            priorGuidance: this.lastGuidance,
+          }),
+        });
+        return false;
+      }
+    }
     if (!this.current(generation, signal)) return false;
     const inputTokens = this.state.inputTokens + check.inputTokens;
     const outputTokens = this.state.outputTokens + check.outputTokens;
