@@ -1,45 +1,36 @@
-import { useEffect, useRef } from 'react';
-import { Bot, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Copy, Download } from 'lucide-react';
 import type { ChatMessage } from '../../../../shared/contracts/task';
 
 export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState(false);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
+  if (!messages.length) return null;
 
-  if (!messages.length) {
-    return null;
+  async function copyMessage(message: ChatMessage) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(message.id);
+      setCopyError(false);
+    } catch { setCopyError(true); }
   }
 
   return (
-    <div className="space-y-4 py-2">
+    <div className="message-feed">
       {messages.map(message => {
         const isUser = message.sender === 'user';
         return (
-          <article
-            key={message.id}
-            className={`flex flex-col gap-1.5 ${isUser ? 'items-end' : 'items-start'}`}
-          >
-            <div className="flex items-center gap-2 px-1">
-              <div className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${
-                isUser ? 'bg-slate-900 text-white' : 'bg-emerald-600 text-white'
-              }`}>
-                {isUser ? <User className="h-2.5 w-2.5" /> : <Bot className="h-2.5 w-2.5" />}
-              </div>
-              <span className="text-[10px] font-medium text-slate-500">
-                {isUser ? 'You' : 'NoMCP Agent'} · {message.timestamp}
-              </span>
-            </div>
-
-            <div
-              className={isUser
-                ? 'max-w-[85%] rounded-2xl bg-slate-900 p-4 text-sm font-medium leading-relaxed text-white shadow-sm'
-                : 'max-w-[95%] py-1 text-sm leading-relaxed text-slate-800'}
-            >
-              <p className="whitespace-pre-wrap">{message.content}</p>
-            </div>
+          <article key={message.id} className={`chat-message ${isUser ? 'user-message' : 'agent-message'}`}>
+            {!isUser && <div className="message-author"><span className="brand-spark" aria-hidden="true">✦</span><span>NoMCP</span></div>}
+            <div className="message-body"><p>{message.content}</p></div>
+            {message.verificationImage && <figure className="message-image"><img src={message.verificationImage} alt="Desktop evidence captured for this task" /><a className="image-download" href={message.verificationImage} download={`nomcp-${message.id}.png`} aria-label="Download desktop evidence"><Download size={19} /></a></figure>}
+            {!isUser && <div className="message-actions"><button type="button" className="chat-icon-button" aria-label={copied === message.id ? 'Message copied' : 'Copy response'} title="Copy response" onClick={() => void copyMessage(message)}>{copied === message.id ? <Check /> : <Copy />}</button><time>{message.timestamp}</time></div>}
           </article>
         );
       })}
+      {copyError && <p role="status" className="composer-feedback">Could not copy. You can select and copy the message text.</p>}
       <div ref={end} />
     </div>
   );

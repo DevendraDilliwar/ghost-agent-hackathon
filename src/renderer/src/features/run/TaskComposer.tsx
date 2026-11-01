@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
-import { Send, Mic, MicOff, Sparkles, Globe } from 'lucide-react';
-import { Button } from '../../components/ui/button';
+import { ArrowUp, ChevronDown, Mic, MicOff, Plus, Sparkles, X } from 'lucide-react';
 import type { ApprovalMode, RunConfiguration } from '../../../../shared/contracts/task';
 
 interface TaskComposerProps {
+  displayName?: string;
   connected: boolean;
   modelReady: boolean;
   ready: boolean;
@@ -57,6 +57,7 @@ declare global {
 }
 
 export function TaskComposer({
+  displayName = 'NoMCP',
   connected,
   modelReady,
   ready,
@@ -77,6 +78,7 @@ export function TaskComposer({
   
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const voicePrefix = useRef('');
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -96,7 +98,7 @@ export function TaskComposer({
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           const transcript = event.results[0]?.[0]?.transcript;
           if (transcript) {
-            setGoal(prev => (prev ? `${prev} ${transcript}` : transcript));
+            setGoal(`${voicePrefix.current}${voicePrefix.current ? ' ' : ''}${transcript}`);
           }
         };
 
@@ -123,13 +125,7 @@ export function TaskComposer({
 
   function toggleVoice() {
     if (!recognitionRef.current) {
-      // Fallback demo speech fill
-      const demoText = voiceLang === 'hi-IN' 
-        ? 'Tally me 50,000 ka invoice generate karo aur Excel sheet banao'
-        : 'Open the accounting software, enter the pending invoice and export report';
-      setGoal(demoText);
-      setVoiceError('Microphone simulated with demo voice command.');
-      setTimeout(() => setVoiceError(null), 3000);
+      setVoiceError('Voice input is unavailable in this environment. Please type your task.');
       return;
     }
 
@@ -139,6 +135,7 @@ export function TaskComposer({
     } else {
       setVoiceError(null);
       try {
+        voicePrefix.current = goal;
         recognitionRef.current.lang = voiceLang;
         recognitionRef.current.start();
       } catch {
@@ -149,7 +146,7 @@ export function TaskComposer({
   }
 
   const canSubmit = connected && !busy && Boolean(goal.trim()) && (!modelReady || (ready && screenConsent && isolatedEnvironment));
-  const submitLabel = busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable switches below' : approvalMode === 'full_access' ? 'Execute Autonomously' : 'Execute Step-by-Step';
+  const submitLabel = busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable desktop permissions in settings' : approvalMode === 'full_access' ? 'Execute Autonomously' : 'Execute Step-by-Step';
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -165,6 +162,8 @@ export function TaskComposer({
     }
   }
 
+  const [showPrompts, setShowPrompts] = useState(false);
+
   const quickTemplates = [
     { label: '🇮🇳 Tally Invoice', text: 'Tally me 50,000 ka GST invoice create karo' },
     { label: '📊 Table to Excel', text: 'Extract active table on screen to an Excel spreadsheet' },
@@ -172,107 +171,39 @@ export function TaskComposer({
   ];
 
   return (
-    <form onSubmit={submit} aria-label="Send a desktop task" className="space-y-4">
-      {/* Quick Template Prompt Chips */}
-      {!busy && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-            <Sparkles className="h-3 w-3 text-slate-400" />
-            Quick Prompts:
-          </span>
-          {quickTemplates.map(item => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => {
-                setGoal(item.text);
-                textareaRef.current?.focus();
-              }}
-              className="cursor-pointer rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-95"
-            >
-              {item.label}
-            </button>
-          ))}
+    <form onSubmit={submit} aria-label="Send a desktop task" className="task-composer">
+      {showPrompts && (
+        <div className="composer-menu" aria-label="Task suggestions">
+          <div className="composer-menu-heading"><span><Sparkles size={15} />Try a task</span><button type="button" className="chat-icon-button" aria-label="Close task suggestions" onClick={() => setShowPrompts(false)}><X size={16} /></button></div>
+          {quickTemplates.map(item => <button key={item.label} type="button" onClick={() => { setGoal(item.text); setShowPrompts(false); textareaRef.current?.focus(); }}>{item.label}</button>)}
+          <button type="button" onClick={() => setVoiceLang(voiceLang === 'hi-IN' ? 'en-US' : 'hi-IN')}>Voice language: {voiceLang === 'hi-IN' ? 'Hindi' : 'English'}<ChevronDown size={14} /></button>
         </div>
       )}
-
-      {/* Main Console Container */}
-      <div 
-        onClick={() => textareaRef.current?.focus()}
-        className={`relative rounded-3xl border p-4 cursor-text transition-colors duration-150 ${
-        isListening
-          ? 'border-emerald-500 bg-white shadow-md shadow-emerald-500/10'
-          : 'border-slate-200 bg-white focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-200'
-      }`}>
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <label htmlFor="task-goal" className="text-xs font-bold tracking-wide text-slate-700 cursor-text">
-            Task Instruction
-          </label>
-
-          {/* Voice Language Toggle */}
-          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-            <Button
-              type="button"
-              onClick={() => setVoiceLang(voiceLang === 'hi-IN' ? 'en-US' : 'hi-IN')}
-              variant="ghost"
-              size="sm"
-              title="Click to toggle voice language"
-            >
-              <Globe className="h-2.5 w-2.5 text-slate-400" />
-              <span>{voiceLang === 'hi-IN' ? '🇮🇳 Hindi' : '🌐 English'}</span>
-            </Button>
-          </div>
-        </div>
-
+      <div className={`composer-capsule ${isListening ? 'is-listening' : ''}`}>
+        <button type="button" className="chat-icon-button composer-plus" disabled={busy} aria-label="Open task suggestions" aria-expanded={showPrompts} onClick={() => setShowPrompts(value => !value)}><Plus /></button>
         <textarea
           ref={textareaRef}
           id="task-goal"
+          aria-label={`Message ${displayName}`}
+          aria-describedby="task-entry-help"
           value={goal}
-          onChange={event => setGoal(event.target.value)}
+          onChange={event => {
+            setGoal(event.target.value);
+            event.target.style.height = 'auto';
+            event.target.style.height = `${Math.min(event.target.scrollHeight, 144)}px`;
+          }}
           onKeyDown={keyDown}
           maxLength={2000}
-          rows={3}
+          rows={1}
           disabled={busy}
-          aria-describedby="task-entry-help"
-          placeholder={isListening ? 'Listening to your voice... Speak now.' : 'Tell NoMCP what to do on your desktop... (e.g. "Tally me entry karo" or "Export report to Excel")'}
-          className="mt-2 w-full resize-none bg-transparent text-sm leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 cursor-text caret-emerald-600"
+          placeholder={isListening ? 'Listening…' : `Ask ${displayName}`}
         />
-
-        {voiceError && (
-          <p className="text-[10px] text-amber-600 mt-1">{voiceError}</p>
-        )}
-
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3" onClick={e => e.stopPropagation()}>
-          {/* Right: Voice Mic + Submit */}
-          <button
-            type="button"
-            onClick={toggleVoice}
-            disabled={busy}
-            className={`flex h-10 w-10 items-center justify-center rounded-xl cursor-pointer transition-all ${
-              isListening
-                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 animate-pulse'
-                : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title={isListening ? 'Click to stop listening' : 'Speak task in Hindi or English'}
-            aria-label={isListening ? 'Stop listening' : 'Speak task using microphone'}
-          >
-            {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-          </button>
-
-          <Button
-            type="submit"
-            disabled={!canSubmit}
-            variant="default"
-            size="icon"
-            className="h-10 w-10"
-            title={submitLabel}
-            aria-label={submitLabel}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
+        <button type="button" className="composer-mode" onClick={onOpenSetup} aria-label="Configure agent mode" title="Configure agent mode"><span>{displayName} <span className="mode-label">{approvalMode === 'full_access' ? 'Auto' : 'Review'}</span></span><ChevronDown size={16} /></button>
+        <button type="button" className={`chat-icon-button ${isListening ? 'voice-active' : ''}`} onClick={toggleVoice} disabled={busy} aria-label={isListening ? 'Stop listening' : 'Speak task using microphone'} aria-pressed={isListening}>{isListening ? <MicOff /> : <Mic />}</button>
+        {goal.trim() && <button type="submit" disabled={!canSubmit} title={submitLabel} aria-label={submitLabel} className="composer-send"><ArrowUp size={19} /></button>}
       </div>
-
+      <span id="task-entry-help" className="sr-only">Enter to send. Shift and Enter for a new line. Desktop app and permissions required to run tasks.</span>
+      {voiceError && <p role="status" className="composer-feedback">{voiceError}</p>}
     </form>
   );
 }

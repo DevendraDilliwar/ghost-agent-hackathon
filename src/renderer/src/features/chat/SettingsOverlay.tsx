@@ -1,8 +1,8 @@
-import { ArrowLeft, Check, Shield, Zap } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Bell, Brush, Database, Languages, SlidersHorizontal, SquareDashedMousePointer, UserRound, X } from 'lucide-react';
 import { ConnectionSetup } from '../environment/ConnectionSetup';
 import type { TaskRuntimeView } from '../run/useTaskRuntime';
 import type { ApprovalMode } from '../../../../shared/contracts/task';
-import { Button } from '../../components/ui/button';
 
 interface SettingsOverlayProps {
   runtime: TaskRuntimeView;
@@ -19,8 +19,12 @@ interface SettingsOverlayProps {
   onClose: () => void;
 }
 
-const stepOptions = [10, 25, 50, 100];
-const minuteOptions = [5, 15, 30, 60];
+type SettingsPage = 'Account' | 'Appearance' | 'Behavior' | 'Notifications' | 'Customize' | 'Data Controls';
+const settingsGroups = [
+  { label: 'General', items: [{ label: 'Account', icon: UserRound }, { label: 'Appearance', icon: Brush }, { label: 'Behavior', icon: SquareDashedMousePointer }, { label: 'Notifications', icon: Bell }] },
+  { label: 'Grok', items: [{ label: 'Customize', icon: SlidersHorizontal }] },
+  { label: 'Data & Information', items: [{ label: 'Data Controls', icon: Database }] },
+] as const;
 
 export function SettingsOverlay({
   runtime,
@@ -31,132 +35,92 @@ export function SettingsOverlay({
   maxMinutes, setMaxMinutes,
   onClose,
 }: SettingsOverlayProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [page, setPage] = useState<SettingsPage>('Account');
+  const [notice, setNotice] = useState('');
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profile, setProfile] = useState({ name: 'Devendra Dilliwar', email: 'devendradilliwar30@gmail.com', birthYear: '2000' });
+  const [draftProfile, setDraftProfile] = useState(profile);
+  const upgrade = () => setNotice('This is a local settings preview. Subscriptions and billing are not connected.');
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const opener = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
+
   return (
-    <div role="dialog" aria-label="Settings" className="absolute inset-0 z-30 overflow-y-auto bg-white">
-      <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-bold text-slate-900">Settings</h2>
-          <Button type="button" onClick={onClose} variant="secondary" size="sm">
-            <ArrowLeft className="h-3.5 w-3.5" />Back to chat
-          </Button>
-        </div>
-        <ConnectionSetup runtime={runtime} />
-        <section aria-label="Run defaults" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900">Run defaults</h3>
-          <p className="mt-1 text-xs text-slate-500">Used for every task until you change them.</p>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setApprovalMode('full_access')}
-              className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-bold transition-all cursor-pointer ${
-                approvalMode === 'full_access'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
-              <span>Full Autonomous Mode</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setApprovalMode('ask_approval')}
-              className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-semibold transition-all cursor-pointer ${
-                approvalMode === 'ask_approval'
-                  ? 'border border-slate-200 bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Shield className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Step-by-Step Approval</span>
-            </button>
-          </div>
-          <div className="mt-3 space-y-2">
-            <div>
-              <p className="mb-1 text-[11px] font-bold text-slate-700">Max steps per run</p>
-              <div className="grid grid-cols-4 gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
-                {stepOptions.map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setMaxSteps(option)}
-                    aria-pressed={maxSteps === option}
-                    className={`rounded-xl px-2 py-1.5 font-bold transition-all cursor-pointer ${
-                      maxSteps === option ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
+    <dialog
+      ref={dialogRef}
+      aria-label="Settings"
+      aria-modal="true"
+      className="settings-popup"
+      onCancel={event => { event.preventDefault(); onClose(); }}
+      onClick={event => {
+        if (event.target !== event.currentTarget) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
+      }}
+    >
+      <button type="button" className="settings-popup-close chat-icon-button" onClick={onClose} aria-label="Close settings" title="Close settings"><X /></button>
+      <nav className="settings-navigation" aria-label="Settings sections">
+        {settingsGroups.map(group => <div className="settings-nav-group" key={group.label}>
+          <p>{group.label}</p>
+          {group.items.map(({ label, icon: Icon }) => <button key={label} type="button" autoFocus={label === 'Account'} aria-current={page === label ? 'page' : undefined} onClick={() => { setPage(label); setNotice(''); }}><Icon /><span>{label}</span></button>)}
+        </div>)}
+      </nav>
+      <div className="settings-main">
+        <section className="settings-page" aria-labelledby="settings-page-title" key={page}>
+          <h2 id="settings-page-title">{page}</h2>
+          {page === 'Account' && <>
+            <div className="settings-profile settings-section">
+              <span className="settings-profile-avatar" aria-hidden="true">{profile.name.trim().charAt(0) || 'D'}</span>
+              <div className="settings-profile-text"><p>{profile.name}</p><span>{profile.email}</span></div>
+              <button type="button" className="settings-outline-button" onClick={() => { setDraftProfile(profile); setEditingProfile(value => !value); }}>{editingProfile ? 'Cancel' : 'Manage'}</button>
             </div>
-            <div>
-              <p className="mb-1 text-[11px] font-bold text-slate-700">Time limit per run</p>
-              <div className="grid grid-cols-4 gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
-                {minuteOptions.map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setMaxMinutes(option)}
-                    aria-pressed={maxMinutes === option}
-                    className={`rounded-xl px-2 py-1.5 font-bold transition-all cursor-pointer ${
-                      maxMinutes === option ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    {option}m
-                  </button>
-                ))}
-              </div>
+            {editingProfile && <form className="settings-profile-editor" onSubmit={event => { event.preventDefault(); setProfile(draftProfile); setEditingProfile(false); setNotice('Preview profile updated for this open dialog. No external account was changed.'); }}>
+              <p>Edit the reference profile for this preview.</p>
+              <label>Name<input required value={draftProfile.name} maxLength={80} onChange={event => setDraftProfile({ ...draftProfile, name: event.target.value })} /></label>
+              <label>Email<input required type="email" value={draftProfile.email} maxLength={254} onChange={event => setDraftProfile({ ...draftProfile, email: event.target.value })} /></label>
+              <label>Birth year<input required type="number" min={1900} max={new Date().getFullYear()} value={draftProfile.birthYear} onChange={event => setDraftProfile({ ...draftProfile, birthYear: event.target.value })} /></label>
+              <button type="submit" className="settings-outline-button">Save preview</button>
+            </form>}
+            <div className="settings-section settings-subscription-section">
+              <div className="settings-row"><div>Subscription <span className="settings-muted">Free</span></div><button type="button" className="settings-outline-button" onClick={upgrade}>Upgrade</button></div>
+              <div className="settings-row"><div>𝕏 Account</div><button type="button" className="settings-outline-button" onClick={() => setNotice('X account linking is not connected in this local preview.')}>Connect</button></div>
             </div>
-          </div>
-          <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-2">
-            <label className={`flex items-center gap-3 rounded-2xl border p-2.5 transition-all cursor-pointer ${
-              screenConsent ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-slate-50'
-            }`}>
-              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition-colors ${
-                screenConsent ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white'
-              }`}>
-                {screenConsent && <Check className="h-3 w-3 stroke-[3]" />}
-              </div>
-              <input
-                type="checkbox"
-                checked={screenConsent}
-                onChange={e => setScreenConsent(e.target.checked)}
-                className="sr-only"
-              />
-              <span className="text-[11px] leading-tight text-slate-600">
-                Allow AI vision processing of desktop screenshots
-              </span>
-            </label>
-            <label className={`flex items-center gap-3 rounded-2xl border p-2.5 transition-all cursor-pointer ${
-              isolatedEnvironment ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-slate-50'
-            }`}>
-              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition-colors ${
-                isolatedEnvironment ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white'
-              }`}>
-                {isolatedEnvironment && <Check className="h-3 w-3 stroke-[3]" />}
-              </div>
-              <input
-                type="checkbox"
-                checked={isolatedEnvironment}
-                onChange={e => setIsolatedEnvironment(e.target.checked)}
-                className="sr-only"
-              />
-              <span className="text-[11px] leading-tight text-slate-600">
-                Running on verified test desktop environment
-              </span>
-            </label>
-          </div>
+            <div className="settings-account-details">
+              <div className="settings-row"><div className="settings-label-with-icon">Language <Languages /></div><button type="button" className="settings-outline-button" onClick={() => setNotice('The interface currently supports English. Language switching is not connected.')}>Change</button></div>
+              <div className="settings-row"><div>Birth Year <span className="settings-muted">{profile.birthYear}</span></div></div>
+            </div>
+          </>}
+          {page === 'Appearance' && <>
+            <div className="settings-row settings-section"><div>Theme<span className="settings-row-description">The dark appearance used throughout the chat.</span></div><span className="settings-choice"><span className="settings-theme-swatch" />Dark</span></div>
+            <div className="settings-row"><span>Font</span><span className="settings-muted">Google Sans</span></div>
+            <div className="settings-row"><span>Text size</span><span className="settings-muted">Default</span></div>
+          </>}
+          {page === 'Behavior' && <>
+            <div className="settings-row settings-section"><label htmlFor="settings-approval">Approval mode<span className="settings-row-description">Choose how desktop actions are approved.</span></label><select id="settings-approval" value={approvalMode} onChange={event => setApprovalMode(event.target.value as ApprovalMode)}><option value="full_access">Full autonomous</option><option value="ask_approval">Step-by-step approval</option><option value="approve_for_me">Approve for me</option></select></div>
+            <div className="settings-row"><label htmlFor="settings-steps">Max steps per run</label><select id="settings-steps" value={maxSteps} onChange={event => setMaxSteps(Number(event.target.value))}>{[10, 25, 50, 100].map(value => <option key={value} value={value}>{value} steps</option>)}</select></div>
+            <div className="settings-row"><label htmlFor="settings-minutes">Time limit per run</label><select id="settings-minutes" value={maxMinutes} onChange={event => setMaxMinutes(Number(event.target.value))}>{[5, 15, 30, 60].map(value => <option key={value} value={value}>{value} minutes</option>)}</select></div>
+            <p className="settings-help">These settings apply to your next desktop task.</p>
+          </>}
+          {page === 'Notifications' && <div className="settings-row settings-section"><div>Desktop notifications<span className="settings-row-description">Task progress is shown in the conversation and floating controls.</span></div><span className="settings-muted">Not connected</span></div>}
+          <div hidden={page !== 'Customize'} className="settings-connection"><ConnectionSetup runtime={runtime} /></div>
+          {page === 'Data Controls' && <>
+            <div className="settings-row settings-section"><label htmlFor="settings-screen-consent">Desktop screenshots<span className="settings-row-description">Allow screenshots to be sent to Meta’s API for AI vision processing.</span></label><input className="settings-switch" id="settings-screen-consent" type="checkbox" role="switch" checked={screenConsent} onChange={event => setScreenConsent(event.target.checked)} /></div>
+            <div className="settings-row settings-section"><label htmlFor="settings-isolated">Test desktop environment<span className="settings-row-description">Confirm that tasks run on your verified test desktop.</span></label><input className="settings-switch" id="settings-isolated" type="checkbox" role="switch" checked={isolatedEnvironment} onChange={event => setIsolatedEnvironment(event.target.checked)} /></div>
+            <div className="settings-row"><span>Emergency stop</span><kbd className="settings-muted">{runtime.readiness?.emergencyStopShortcut ?? 'Unavailable'}</kbd></div>
+            <p className="settings-help">You can pause or take control at any time. The agent never resumes on its own. Keep passwords and secrets out of the target app.</p>
+          </>}
+          {notice && <div className="settings-notice" role="status"><p>{notice}</p><button type="button" className="chat-icon-button" aria-label="Dismiss notice" onClick={() => setNotice('')}><X /></button></div>}
         </section>
-        <section aria-label="Safety" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900">Safety</h3>
-          <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-slate-600">
-            <li>Emergency stop: {runtime.readiness?.emergencyStopShortcut ?? 'unavailable'}. You can also pause or take control at any time; the agent never resumes on its own.</li>
-            <li>Every run stays inside step, token, and time limits. Nothing runs without your goal.</li>
-            <li>Screenshots are sent to Meta&apos;s API to decide each step. Never type passwords or secrets into the target app.</li>
-          </ul>
-        </section>
-        <p className="text-center text-[11px] text-slate-400">NoMCP Universal Worker · your chat draft is kept while Settings is open.</p>
+        <footer className="settings-premium-strip"><div><strong>Premium</strong><span>Fewer rate limits, more capabilities</span></div><button type="button" onClick={upgrade}>Upgrade</button></footer>
       </div>
-    </div>
+    </dialog>
   );
 }

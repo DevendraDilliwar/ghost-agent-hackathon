@@ -1,9 +1,10 @@
-import { AlertTriangle, ArrowRight, Bot, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Sparkles, CheckCircle2, Download, ShieldAlert } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { ActionTimeline } from '../run/ActionTimeline';
 import { ApprovalCard } from '../run/ApprovalCard';
 import { HandoffPanel } from '../run/HandoffPanel';
 import { RecoveryPanel } from '../run/RecoveryPanel';
+import { RunReviewPanel } from '../run/RunReviewPanel';
 import { isActiveTask } from '../run/task-presentation';
 import type { TaskRuntimeView } from '../run/useTaskRuntime';
 import { AgentStatusBubble } from './AgentStatusBubble';
@@ -23,11 +24,11 @@ export function ChatThread({ runtime, onOpenSetup }: ChatThreadProps) {
   const ready = runtime.connected && modelReady && runtime.readiness?.ready === true;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-      <div className="mx-auto w-full max-w-3xl space-y-4">
+    <div className="chat-thread">
+      <div className="chat-thread-content space-y-4">
         {!runtime.connected && !active && (
-          <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+          <div className="chat-preview-notice">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             <span>Browser UI preview mode. Open the installed desktop app to operate your native desktop session.</span>
           </div>
         )}
@@ -78,19 +79,23 @@ export function ChatThread({ runtime, onOpenSetup }: ChatThreadProps) {
         )}
 
         {!task?.runId && (
-          <div className="flex flex-col items-center px-4 py-10 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 shadow-sm">
-              <Bot className="h-6 w-6 text-white" />
-            </div>
-            <h2 className="mt-4 text-lg font-bold tracking-tight text-slate-900">What should I do on your desktop?</h2>
-            <p className="mt-1 max-w-md text-sm leading-relaxed text-slate-500">
-              Describe a task in plain words. I see the screen and use the mouse and keyboard — no connectors needed.
-            </p>
+          <div className="chat-welcome">
+            <span className="welcome-spark" aria-hidden="true"><Sparkles /></span>
+            <p className="welcome-eyebrow">Your desktop, a little more effortless.</p>
+            <h2>What should I do on your desktop?</h2>
+            <p>Describe a task. I’ll work with the apps on your screen.</p>
           </div>
         )}
 
         <MessageFeed messages={task?.messages ?? []} />
 
+        {task?.screenshot && !task.awaitingCompletion && (
+          <figure className="message-image">
+            <img src={task.screenshot} alt="Latest desktop screenshot from the current task" />
+            <a className="image-download" href={task.screenshot} download="nomcp-desktop.png" aria-label="Download latest desktop screenshot"><Download size={19} /></a>
+          </figure>
+        )}
+        {task?.awaitingCompletion && <RunReviewPanel runtime={runtime} />}
         <ApprovalCard runtime={runtime} />
         <HandoffPanel key={task?.revision ?? 0} runtime={runtime} />
         <RecoveryPanel runtime={runtime} onOpenSetup={onOpenSetup} />

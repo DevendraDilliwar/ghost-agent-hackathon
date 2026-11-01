@@ -31,4 +31,14 @@ describe('ChatThread', () => {
     expect(html).toContain('Live activity');
     expect(html).toContain('Click the target');
   });
+
+  it('keeps completion verification available directly in chat with the workspace closed', () => {
+    const task = { ...snapshot(), status: 'verifying' as const, awaitingCompletion: true, screenshot: 'data:image/png;base64,dGVzdA==' };
+    const runtime = { snapshot: task, connected: true, refresh: vi.fn(), confirm: vi.fn() } as unknown as TaskRuntimeView;
+    const html = renderToStaticMarkup(createElement(ChatThread, { runtime, onOpenSetup: vi.fn() }));
+    expect(html).toContain('Goal Verified Complete');
+    expect(html).toContain('Task Incomplete / Needs Correction');
+    expect(html).toContain('Verify Final Desktop State');
+    expect(html).toContain('alt="Desktop observation"');
+  });
 });

@@ -13,10 +13,10 @@ interface WorkspaceSidebarProps {
 export function WorkspaceSidebar({ runtime, open, onClose }: WorkspaceSidebarProps) {
   if (!open) return null;
   return (
-    <aside aria-label="Live workspace" className="flex min-h-[280px] w-full flex-col border-t border-slate-200 bg-slate-50 lg:w-[400px] lg:min-h-0 lg:flex-none lg:border-l lg:border-t-0">
+    <aside aria-label="Live workspace" className="live-workspace-drawer">
       <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-2.5">
         <h2 className="text-xs font-bold text-slate-700">Live workspace</h2>
-        <Button type="button" variant="ghost" size="sm" onClick={onClose} title="Hide the live workspace panel">
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} title="Hide the live workspace panel" aria-label="Hide live workspace">
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
