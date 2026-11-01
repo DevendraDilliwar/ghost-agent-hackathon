@@ -13,7 +13,7 @@ function tokens(value: unknown): number {
 }
 
 /** Flags malformed model output so the controller retries once with correction guidance. */
-function malformed(message: string): Error {
+export function malformed(message: string): Error {
   return Object.assign(new Error(message), { malformedModelOutput: true });
 }
 
@@ -69,6 +69,16 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
         throw malformed('Meta returned an invalid shell call.');
       }
       return { action: null, shell: { command: shellCommand.trim() }, message, warnings,
+        inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+    }
+    if (handoff.name === 'click_tag') {
+      if (typeof handoff.arguments !== 'string' || handoff.arguments.length > 512) throw malformed('Meta returned an unsupported tag click.');
+      let tagArgs: unknown;
+      try { tagArgs = JSON.parse(handoff.arguments) as unknown; }
+      catch { throw malformed('Meta returned an invalid tag click.'); }
+      const tag = object(tagArgs).tag;
+      if (typeof tag !== 'number' || !Number.isSafeInteger(tag) || tag < 1 || tag > 1000) throw malformed('Meta returned an invalid tag click.');
+      return { action: null, tag, message, warnings,
         inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
     }
     if (handoff.name !== 'request_user_help' || typeof handoff.arguments !== 'string' || handoff.arguments.length > 4096) throw malformed('Meta returned an unsupported handoff.');

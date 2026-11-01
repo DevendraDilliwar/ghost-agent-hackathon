@@ -30,6 +30,8 @@ export interface ModelDecision {
   readonly actions?: DesktopCommand[];
   /** Terminal command to run instead of a desktop action. Never combined with action. */
   readonly shell?: ShellCall;
+  /** Grounded tag to click instead of coordinates. The adapter resolves it to a click; never combined with action. */
+  readonly tag?: number;
   /** Computer actions returned without a screenshot (text mode). The controller captures fresh, then validates. */
   readonly pendingActions?: unknown[];
   readonly message: string;

@@ -1,5 +1,5 @@
 import type { ModelPort } from '../../agent/ports';
-import { parseMetaDecision } from './parse-response';
+import { malformed, parseMetaDecision } from './parse-response';
 import { parseIntentResponse } from './parse-intent';
 import { parsePlanResponse } from './parse-plan';
 import { parseVerifyResponse } from './parse-verify';
@@ -14,6 +14,7 @@ const instructions = [
   'When the goal lists numbered planned steps, start your narration with the step you are working on as [step N] (for example "[step 2] Clicking Deploy."). Omit the tag when no planned step fits.',
   'Never repeat an action that just failed without changing it first.',
   'Use only click, double_click, type, keypress, scroll, wait, or screenshot.',
+  'When the Grounding Elements list names your click target, call click_tag with its tag number instead of guessing coordinates.',
   'For terminal work (files, folders, commands, checks) call run_shell with one shell command instead of driving the Terminal app by mouse. Prefer run_shell whenever text output answers the question; GUI apps still need mouse and keyboard actions.',
   'run_shell IS the terminal: never open or type into the Terminal app for plain commands.',
   'Never use run_shell for passwords, secrets, privilege escalation (no sudo or su), destructive commands, or fetching remote code into a shell. Read run_shell output as your observation: no screenshot follows a shell call.',
@@ -86,6 +87,10 @@ export class MetaComputerModel implements ModelPort {
           strict: true, parameters: { type: 'object', properties: {
             command: { type: 'string', description: 'A single shell command line, up to 2000 characters.' },
           }, required: ['command'], additionalProperties: false } },
+        { type: 'function', name: 'click_tag', description: 'Click a listed grounding element by its tag number instead of guessing coordinates. Use only tags from the Grounding Elements list.',
+          strict: true, parameters: { type: 'object', properties: {
+            tag: { type: 'integer', description: 'Tag number from the Grounding Elements list.' },
+          }, required: ['tag'], additionalProperties: false } },
       ],
       input: [{ role: 'user', content: observation
         ? [
@@ -94,7 +99,15 @@ export class MetaComputerModel implements ModelPort {
         ]
         : [{ type: 'input_text', text: goalText }] }],
     }, input.signal, this.request);
-    return parseMetaDecision(response, observation);
+    const decision = parseMetaDecision(response, observation);
+    if (decision.tag === undefined) return decision;
+    // Click-by-tag: resolve the model's tag choice to exact coordinates here,
+    // where the grounding list is in scope. An unknown tag is malformed model
+    // output, so the controller retries it with correction guidance.
+    const target = input.grounding?.elements.find(element => element.id === decision.tag);
+    if (!target) throw malformed('Grounded tag ' + decision.tag + ' is not on the current screen. Use a listed tag or click coordinates.');
+    const action = { type: 'click', x: target.center.x, y: target.center.y, button: 'left' } as const;
+    return { ...decision, action };
   }
 
   async parseIntent(input: Parameters<ModelPort['parseIntent']>[0]) {

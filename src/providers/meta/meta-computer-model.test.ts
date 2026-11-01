@@ -148,6 +148,39 @@ describe('Meta computer-use adapter', () => {
     expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: 'x'.repeat(2001) }) }] }, frame)).toThrow('invalid shell call');
   });
 
+  it('parses a click_tag call into a tag choice, never coordinates', () => {
+    const tag = { type: 'function_call', name: 'click_tag', arguments: JSON.stringify({ tag: 2 }) };
+    const decision = parseMetaDecision({ ...response, output: [tag] }, frame);
+    expect(decision.action).toBeNull();
+    expect(decision.tag).toBe(2);
+    expect(() => parseMetaDecision({ ...response, output: [{ ...tag, arguments: '{' }] }, frame)).toThrow('invalid tag click');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...tag, arguments: JSON.stringify({ tag: 0 }) }] }, frame)).toThrow('invalid tag click');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...tag, arguments: JSON.stringify({}) }] }, frame)).toThrow('invalid tag click');
+  });
+
+  it('resolves click_tag to exact element centers and flags unknown tags for retry', async () => {
+    const tagCall = { type: 'function_call', name: 'click_tag', arguments: JSON.stringify({ tag: 2 }) };
+    const grounding = { elements: [
+      { id: 1, type: 'button' as const, label: 'Cancel', bounds: { x: 0, y: 0, width: 60, height: 20 }, center: { x: 30, y: 10 }, confidence: 0.9 },
+      { id: 2, type: 'button' as const, label: 'Save', bounds: { x: 100, y: 200, width: 140, height: 36 }, center: { x: 170, y: 218 }, confidence: 0.9 },
+    ], totalElements: 2, processedAt: 0 };
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ...response, output: [tagCall] })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const decision = await model.decide({ goal: 'test', observation: frame, history: [], grounding, signal: new AbortController().signal });
+    expect(decision.action).toEqual({ type: 'click', x: 170, y: 218, button: 'left' });
+    const tools = JSON.parse(String(request.mock.calls[0]![1]?.body)).tools.map((tool: { name?: string }) => tool.name);
+    expect(tools).toContain('click_tag');
+
+    const unknown = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ...response, output: [{ ...tagCall, arguments: JSON.stringify({ tag: 99 }) }] })));
+    const retryModel = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, unknown);
+    const failure = await retryModel.decide({ goal: 'test', observation: frame, history: [], grounding, signal: new AbortController().signal }).then(
+      () => { throw new Error('expected unknown tag to fail'); },
+      (error: unknown) => error,
+    );
+    expect((failure as Error).message).toContain('not on the current screen');
+    expect((failure as { malformedModelOutput?: unknown }).malformedModelOutput).toBe(true);
+  });
+
   it('flags malformed tool calls for a controller retry but not limit or filter stops', () => {
     for (const bad of [{ ...response, output: [{ type: 'function_call', name: 'run_shell', arguments: '{' }] }, { ...response, output: 'not-a-list' }]) {
       try {
