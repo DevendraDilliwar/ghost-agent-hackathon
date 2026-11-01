@@ -4,7 +4,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TaskController } from '../../agent/task-controller';
+import { UIGroundingEngine } from '../../agent/vision/ui-grounding';
 import { LocalShell } from '../../desktop/linux/local-shell';
+import { createAtspiDetector } from '../../desktop/linux/atspi-reader';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
 import { CheckpointStore } from '../../observability/checkpoint-store';
 import { MetaComputerModel } from '../../providers/meta/meta-computer-model';
@@ -96,6 +98,7 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,
+    grounding: new UIGroundingEngine(createAtspiDetector()),
     changed: snapshot => {
       latest = snapshot;
       if (snapshot.status === 'verifying' && snapshot.awaitingCompletion && snapshot.runId) {

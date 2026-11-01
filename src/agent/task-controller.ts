@@ -415,7 +415,7 @@ export class TaskController {
    */
   private async decideNext(signal: AbortSignal, generation: number, observation: ScreenObservation | null, progressNote: string | null): Promise<void> {
     const engine = this.dependencies.grounding ?? defaultGroundingEngine;
-    const grounding = observation ? engine.groundScreen(observation) : null;
+    const grounding = observation ? await engine.groundScreen(observation, signal) : null;
     this.update({
       status: 'thinking',
       ...(observation ? { screenshot: observation.image } : {}),

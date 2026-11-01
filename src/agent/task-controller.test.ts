@@ -576,7 +576,7 @@ describe('task lifecycle', () => {
       }],
       totalElements: 1, processedAt: 0,
     };
-    const { controller, model } = setup({ grounding: { groundScreen: () => detected } });
+    const { controller, model } = setup({ grounding: { groundScreen: async () => detected } });
     controller.start(configuration);
     await flush();
     expect(model.decide.mock.calls[0]?.[0].grounding).toBe(detected);

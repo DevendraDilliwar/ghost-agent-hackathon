@@ -9,7 +9,9 @@ import { RunHistoryStore, toRunRecord } from '../../observability/run-history-st
 import type { RunRecord, RunSummary } from '../../shared/contracts/history';
 import type { MissionSummary } from '../../shared/contracts/mission';
 import { TaskController } from '../../agent/task-controller';
+import { UIGroundingEngine } from '../../agent/vision/ui-grounding';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
+import { createAtspiDetector } from '../../desktop/linux/atspi-reader';
 import { LocalShell } from '../../desktop/linux/local-shell';
 import { MetaComputerModel } from '../../providers/meta/meta-computer-model';
 import { describeCommand, validateDesktopCommand } from '../../policy/task-validation';
@@ -112,6 +114,7 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,
+    grounding: new UIGroundingEngine(createAtspiDetector()),
     changed: snapshot => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(IPC_CHANNELS.taskChanged, snapshot);
       if (!controls.isDestroyed() && !controls.webContents.isDestroyed()) controls.webContents.send(IPC_CHANNELS.controlsChanged, controlsSnapshot(snapshot, shortcut?.label ?? null));

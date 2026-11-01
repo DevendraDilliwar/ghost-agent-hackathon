@@ -22,10 +22,29 @@ describe('UIGroundingEngine', () => {
     },
   ];
 
-  it('returns zero elements until a real detector is wired (never invents boxes)', () => {
-    const result = engine.groundScreen(mockObservation);
+  it('returns zero elements until a real detector is wired (never invents boxes)', async () => {
+    const result = await engine.groundScreen(mockObservation);
     expect(result.elements).toEqual([]);
     expect(result.totalElements).toBe(0);
+  });
+
+  it('filters off-screen boxes and renumbers detector output', async () => {
+    const wired = new UIGroundingEngine(async () => [
+      { id: 7, type: 'button', label: 'Save', bounds: { x: 100, y: 200, width: 140, height: 36 }, center: { x: 170, y: 218 }, confidence: 0.9 },
+      { id: 9, type: 'button', label: 'Hidden', bounds: { x: 5000, y: 100, width: 60, height: 20 }, center: { x: 5030, y: 110 }, confidence: 0.9 },
+      { id: 11, type: 'button', label: 'Tiny', bounds: { x: 10, y: 10, width: 2, height: 2 }, center: { x: 11, y: 11 }, confidence: 0.9 },
+    ]);
+    const result = await wired.groundScreen(mockObservation);
+    expect(result.elements).toHaveLength(1);
+    expect(result.elements[0]).toMatchObject({ id: 1, label: 'Save' });
+    expect(result.totalElements).toBe(1);
+  });
+
+  it('falls back to zero elements when the detector fails or hangs', async () => {
+    const failing = new UIGroundingEngine(async () => { throw new Error('no bus'); });
+    await expect(failing.groundScreen(mockObservation)).resolves.toMatchObject({ elements: [] });
+    const hanging = new UIGroundingEngine(() => new Promise<GroundedElement[]>(() => undefined), 10);
+    await expect(hanging.groundScreen(mockObservation)).resolves.toMatchObject({ elements: [] });
   });
 
   it('resolves tag ID to exact center coordinates', () => {

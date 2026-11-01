@@ -23,3 +23,9 @@ export interface GroundingResult {
   readonly processedAt: number;
   readonly annotatedImage?: string;
 }
+
+/**
+ * Detects interactive elements on screen. Resolves [] when the backend is
+ * missing or unreachable — callers fall back to ungrounded decisions.
+ */
+export type ElementDetector = (signal: AbortSignal) => Promise<GroundedElement[]>;
