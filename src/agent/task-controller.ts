@@ -412,16 +412,23 @@ export class TaskController {
       return false;
     }
     if (decision.intent.missing.length) {
-      const first = decision.intent.questions?.[0];
-      const options = first?.options.filter(option => option.trim()).slice(0, 4) ?? [];
+      // Every model question goes out in one handoff; the UI steps through them one by one.
+      const asked = (decision.intent.questions ?? [])
+        .filter(entry => entry.question.trim())
+        .slice(0, 3)
+        .map(entry => ({
+          id: entry.id.slice(0, 32), question: entry.question.slice(0, 300),
+          options: entry.options.filter(option => option.trim()).slice(0, 4).map(option => option.slice(0, 100)),
+        }));
+      const lead = asked[0];
       this.yieldToUser({
         kind: 'clarification',
-        reason: (first && first.question.trim()
-          ? first.question
+        reason: (lead
+          ? asked.length > 1
+            ? asked.length + ' quick questions before I continue. First: ' + lead.question
+            : lead.question
           : 'Before I touch the desktop, I need: ' + decision.intent.missing.join(', ') + '. Reply with the missing values.').slice(0, 1000),
-        ...(first && first.question.trim() && options.length
-          ? { questions: [{ id: first.id.slice(0, 32), question: first.question.slice(0, 300), options: options.map(option => option.slice(0, 100)) }] }
-          : {}),
+        ...(lead ? { questions: asked } : {}),
       });
       return false;
     }

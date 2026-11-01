@@ -36,18 +36,37 @@ describe('parseRecoveryStory', () => {
 });
 
 describe('HandoffPanel questions', () => {
-  it('renders a suggested-answer dropdown for structured questions', () => {
+  it('renders the stepped question card for structured questions', () => {
     const runtime = {
       snapshot: {
         runId: 'run-1', status: 'needs_user', maxMinutes: 5, pendingActionId: null, message: '',
-        handoff: { kind: 'clarification', reason: 'Where should I deploy?',
-          questions: [{ id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] }] },
+        handoff: { kind: 'clarification', reason: '2 quick questions before I continue. First: Where should I deploy?',
+          questions: [
+            { id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] },
+            { id: 'q2', question: 'Which repo?', options: [] },
+          ] },
       },
       pending: false,
     } as unknown as TaskRuntimeView;
     const html = renderToStaticMarkup(createElement(HandoffPanel, { runtime }));
-    expect(html).toContain('Suggested answers');
+    expect(html).toContain('2 questions before I continue');
+    expect(html).toContain('Where should I deploy?');
+    expect(html).toContain('1 of 2');
     expect(html).toContain('Vercel');
     expect(html).toContain('GCP');
+    expect(html).toContain('Skip');
+  });
+
+  it('falls back to a free-text answer when the model asks no structured question', () => {
+    const runtime = {
+      snapshot: {
+        runId: 'run-1', status: 'needs_user', maxMinutes: 5, pendingActionId: null, message: '',
+        handoff: { kind: 'clarification', reason: 'Before I touch the desktop, I need: amount.' },
+      },
+      pending: false,
+    } as unknown as TaskRuntimeView;
+    const html = renderToStaticMarkup(createElement(HandoffPanel, { runtime }));
+    expect(html).toContain('Your answer');
+    expect(html).toContain('Send answer &amp; resume');
   });
 });

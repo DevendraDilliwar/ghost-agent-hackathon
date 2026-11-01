@@ -378,7 +378,7 @@ describe('task lifecycle', () => {
     expect(model.decide).not.toHaveBeenCalled();
   });
 
-  it('asks the first model question with tappable options before touching the desktop', async () => {
+  it('asks every model question at once before touching the desktop', async () => {
     const { controller, desktop, model } = setup();
     model.parseIntent.mockResolvedValueOnce({ intent: { summary: 'Deploy it', params: {}, missing: ['target'], questions: [
       { id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] },
@@ -389,8 +389,11 @@ describe('task lifecycle', () => {
     const handoff = controller.getSnapshot().handoff;
     expect(controller.getSnapshot().status).toBe('needs_user');
     expect(handoff?.kind).toBe('clarification');
-    expect(handoff?.reason).toBe('Where should I deploy?');
-    expect(handoff?.questions).toEqual([{ id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] }]);
+    expect(handoff?.reason).toBe('2 quick questions before I continue. First: Where should I deploy?');
+    expect(handoff?.questions).toEqual([
+      { id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] },
+      { id: 'q2', question: 'Which repo?', options: [] },
+    ]);
     expect(desktop.capture).not.toHaveBeenCalled();
   });
 

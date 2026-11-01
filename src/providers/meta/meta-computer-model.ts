@@ -27,7 +27,7 @@ const intentInstructions = [
   'Put every concrete value stated in the goal into params, such as dates, names, amounts, and file names.',
   'Put every value the goal needs but does not state into missing. Never invent values.',
   'For each missing value ask one plain question the user can answer in seconds, with 1 to 4 short tappable options. Options are common-sense suggestions, never invented facts. The user may also type a custom answer.',
-  'Use at most 3 questions with ids q1, q2, q3. Omit questions when missing is empty. Use at most 20 params and 20 missing names. Keep the summary under 500 characters, each question under 300 characters, each option under 100 characters, and each value under 200 characters.',
+  'Use at most 3 questions with ids q1, q2, q3. Omit questions when missing is empty. Return every question this goal needs in this single response - ask all of them at once instead of one now and more later. Use at most 20 params and 20 missing names. Keep the summary under 500 characters, each question under 300 characters, each option under 100 characters, and each value under 200 characters.',
 ].join(' ');
 
 const planInstructions = [
