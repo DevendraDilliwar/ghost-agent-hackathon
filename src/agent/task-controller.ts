@@ -3,6 +3,7 @@ import type { CheckpointPort, DesktopPort, ModelDecision, ModelPort, ShellPort, 
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
+import type { GroundingResult } from '../shared/contracts/grounding';
 import { defaultGroundingEngine } from './vision/ui-grounding';
 import type { UIGroundingEngine } from './vision/ui-grounding';
 import { defaultPrismVerifier } from './vision/prism-verifier';
@@ -50,6 +51,29 @@ function isMalformedOutput(error: unknown): boolean {
   return error instanceof Error && (error as { malformedModelOutput?: unknown }).malformedModelOutput === true;
 }
 
+const COMPACT_KEEP_STEPS = 10;
+
+/**
+ * Compacts step history for long runs: the last 10 steps stay verbatim,
+ * older steps collapse into one count line plus the last earlier failure.
+ * Rule-based and deterministic — compaction costs zero model calls.
+ */
+export function compactStepLines(lines: string[]): string[] {
+  if (lines.length <= COMPACT_KEEP_STEPS) return lines;
+  const hidden = lines.slice(0, lines.length - COMPACT_KEEP_STEPS);
+  const buckets = new Map<string, number>();
+  for (const line of hidden) {
+    const key = (line.startsWith('failed:') ? 'failed' : 'executed') + (line.includes(': $ ') ? ' shell' : ' desktop');
+    buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  const out = ['Earlier steps (' + hidden.length + ' compacted): ' +
+    [...buckets.entries()].map(([key, count]) => count + ' ' + key).join(', ') + '.'];
+  const lastFailure = hidden.filter(line => line.startsWith('failed:')).at(-1);
+  if (lastFailure) out.push('Last earlier failure: ' + lastFailure.slice(0, 300));
+  out.push(...lines.slice(lines.length - COMPACT_KEEP_STEPS));
+  return out;
+}
+
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -69,6 +93,8 @@ export class TaskController {
   private clarifications: string[] = [];
   private noProgressStreak = 0;
   private malformedStreak = 0;
+  private lastSentFrame: string | null = null;
+  private lastGrounding: { image: string; result: GroundingResult } | null = null;
   /** Consecutive stall handoffs without progress. Survives resume so a stuck run fails instead of looping forever. */
   private stallCycles = 0;
   /** Think-time of the latest decide(), paired with the next verification for timing. */
@@ -112,6 +138,8 @@ export class TaskController {
     this.lastGuidance = null;
     this.unmetStreak = 0;
     this.unmetNote = null;
+    this.lastSentFrame = null;
+    this.lastGrounding = null;
     this.approvalMode = configuration.approvalMode ?? 'full_access';
     const runId = this.dependencies.id();
     if (configuration.resume) {
@@ -415,7 +443,15 @@ export class TaskController {
    */
   private async decideNext(signal: AbortSignal, generation: number, observation: ScreenObservation | null, progressNote: string | null): Promise<void> {
     const engine = this.dependencies.grounding ?? defaultGroundingEngine;
-    const grounding = observation ? await engine.groundScreen(observation, signal) : null;
+    let grounding: GroundingResult | null = null;
+    if (observation) {
+      if (this.lastGrounding && observation.image === this.lastGrounding.image) {
+        grounding = this.lastGrounding.result;
+      } else {
+        grounding = await engine.groundScreen(observation, signal);
+        this.lastGrounding = { image: observation.image, result: grounding };
+      }
+    }
     this.update({
       status: 'thinking',
       ...(observation ? { screenshot: observation.image } : {}),
@@ -427,8 +463,9 @@ export class TaskController {
       groundedElements: grounding?.elements ?? [],
     });
     const history = [...this.resumedHistory];
-    history.push(...this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
-      .map(action => action.status + ': ' + action.description));
+    const stepLines = this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
+      .map(action => action.status + ': ' + action.description);
+    history.push(...compactStepLines(stepLines));
     history.push(...this.clarifications.map(answer => 'User clarification: ' + answer));
     const lastVerification = this.state.actions.at(-1)?.verification;
     if (lastVerification) history.push('Last step result: ' + lastVerification.summary);
@@ -451,9 +488,15 @@ export class TaskController {
       history.unshift('Current phase [' + phase.domain + ']: ' + phase.goal);
     }
     const decideStart = this.now();
+    // Frame cache: an unchanged screenshot is not worth resending — the model
+    // already saw these exact bytes. Grounding text still goes (it is small
+    // and keeps click_tag working); validation uses the local frame.
+    const frameChanged = !observation || observation.image !== this.lastSentFrame;
+    if (observation && frameChanged) this.lastSentFrame = observation.image;
+    if (observation && !frameChanged) history.push('Screenshot unchanged since the last observation; decide from the executed steps above.');
     const decideInput = {
       goal: this.state.goal, history, signal,
-      ...(observation ? { observation } : {}),
+      ...(observation && frameChanged ? { observation } : {}),
       ...(grounding?.elements.length ? { grounding } : {}),
     };
     let decision: ModelDecision;

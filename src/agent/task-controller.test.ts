@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TaskController } from './task-controller';
+import { TaskController, compactStepLines } from './task-controller';
 import { UIGroundingEngine } from './vision/ui-grounding';
 import type { JournalEvent, JournalSink } from '../shared/contracts/journal';
 import type { MissionMeta, PhaseCheckpoint } from '../shared/contracts/mission';
@@ -356,6 +356,19 @@ describe('task lifecycle', () => {
       expect(transcript?.[0]).toContain('$ ls ~/Documents');
       expect(transcript?.[0]).toContain('Shell exit 0');
       expect(transcript?.[0]).toContain('Expense-Nov');
+    });
+
+    it('compacts step history after ten steps without losing the thread', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'ok' }));
+      const { controller, model } = setup({ shell: { run } });
+      for (let i = 0; i < 11; i++) model.decide.mockResolvedValueOnce(shellDecision('echo ' + i));
+      model.decide.mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 15 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      const text = (model.decide.mock.calls[11]?.[0].history as string[]).join('\n');
+      expect(text).toContain('Earlier steps (1 compacted): 1 executed shell.');
+      expect(text).toContain('executed: $ echo 10');
+      expect(text).not.toContain('executed: $ echo 0');
     });
 
     it('fails cleanly when text-mode actions fall outside the fresh screenshot', async () => {
@@ -781,6 +794,27 @@ describe('task lifecycle', () => {
     expect(model.decide).toHaveBeenCalledTimes(1);
   });
 
+  it('skips resending an unchanged screenshot and reuses its grounding', async () => {
+    const detected = {
+      elements: [{
+        id: 1, type: 'button' as const, label: 'Save',
+        bounds: { x: 100, y: 200, width: 140, height: 36 },
+        center: { x: 170, y: 218 }, confidence: 0.9,
+      }],
+      totalElements: 1, processedAt: 0,
+    };
+    const groundScreen = vi.fn().mockResolvedValue(detected);
+    const snapper = new UIGroundingEngine();
+    const { controller, model } = setup({ grounding: { groundScreen, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(model.decide.mock.calls[0]?.[0].observation).toBeDefined();
+    expect(model.decide.mock.calls[1]?.[0].observation).toBeUndefined();
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('Screenshot unchanged since the last observation; decide from the executed steps above.');
+    expect(groundScreen).toHaveBeenCalledTimes(1);
+    expect(model.decide.mock.calls[1]?.[0].grounding).toBe(detected);
+  });
+
   it('tells the model what the last step did before the next decision', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
@@ -1123,5 +1157,30 @@ describe('self-fix error loop', () => {
     const recoveredHistory: string[] = model.decide.mock.calls[2]![0].history;
     expect(recoveredHistory.some(entry => entry.includes('Do not repeat'))).toBe(false);
     expect(recoveredHistory.some(entry => entry.includes('PRISM verified'))).toBe(true);
+  });
+});
+
+describe('history compaction', () => {
+  it('passes short histories through untouched', () => {
+    const lines = Array.from({ length: 10 }, (_, index) => 'executed: step ' + index);
+    expect(compactStepLines(lines)).toEqual(lines);
+  });
+
+  it('collapses older steps into counts and keeps the last ten verbatim', () => {
+    const lines = [
+      'executed: $ mkdir a', 'executed: $ mkdir b', 'failed: Click the test target',
+      ...Array.from({ length: 10 }, (_, index) => 'executed: step ' + index),
+    ];
+    const compacted = compactStepLines(lines);
+    expect(compacted[0]).toBe('Earlier steps (3 compacted): 2 executed shell, 1 failed desktop.');
+    expect(compacted[1]).toBe('Last earlier failure: failed: Click the test target');
+    expect(compacted.slice(2)).toEqual(lines.slice(3));
+  });
+
+  it('omits the failure line when the compacted window has no failures', () => {
+    const lines = Array.from({ length: 12 }, (_, index) => 'executed: $ echo ' + index);
+    const compacted = compactStepLines(lines);
+    expect(compacted[0]).toBe('Earlier steps (2 compacted): 2 executed shell.');
+    expect(compacted).toHaveLength(11);
   });
 });
