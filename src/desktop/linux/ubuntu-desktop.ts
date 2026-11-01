@@ -39,10 +39,19 @@ export class UbuntuDesktop implements DesktopPort {
       if (image.byteLength > 8_000_000 || size.width < 1 || size.height < 1) throw new Error('The desktop screenshot is empty or too large.');
       const activeWindowId = await runXdotool(['getactivewindow'], signal);
       if (!/^[0-9]+$/.test(activeWindowId)) throw new Error('Could not determine the foreground application.');
+      // Best-effort title: helps the model recognize apps, never blocks capture.
+      let activeWindowTitle: string | null = null;
+      try {
+        const title = await runXdotool(['getwindowname', activeWindowId], signal);
+        activeWindowTitle = title.trim().slice(0, 200) || null;
+      } catch {
+        // Title lookup must never block capture.
+      }
       return {
         image: 'data:image/png;base64,' + image.toString('base64'),
         width: size.width, height: size.height, desktopWidth: geometry.width, desktopHeight: geometry.height,
         activeWindowId, capturedAt: Date.now(),
+        ...(activeWindowTitle === null ? {} : { activeWindowTitle }),
       };
     });
   }

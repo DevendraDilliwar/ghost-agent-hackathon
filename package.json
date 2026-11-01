@@ -24,7 +24,8 @@
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run build && npm run check:preloads",
     "package:linux": "npm run build && electron-builder --linux --publish never",
     "package:win": "npm run build && electron-builder --win --publish never",
-    "demo:tally": "electron demo/legacy-accounting/launch.mjs"
+    "demo:tally": "electron demo/legacy-accounting/launch.mjs",
+    "eval": "npm run build && electron . --eval"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.5.0",

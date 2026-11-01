@@ -207,6 +207,7 @@ describe('Meta computer-use adapter', () => {
     const result = await model.plan({ goal: 'Ship the repo', signal: new AbortController().signal });
     const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
     expect(body.tools).toBeUndefined();
+    expect(body.max_output_tokens).toBe(4096);
     expect(String(request.mock.calls[0]![1]?.body)).not.toContain('data:image');
     expect(result.phases).toEqual([
       { domain: 'github', goal: 'Push code', steps: [], success: 'Push succeeded' },

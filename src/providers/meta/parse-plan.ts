@@ -13,7 +13,18 @@ function tokens(value: unknown): number {
 
 export function parsePlanResponse(value: unknown): PlanDecision {
   const response = record(value);
-  if (response.status === 'incomplete') throw new Error('Meta stopped while planning your goal. No desktop action was taken. Try a shorter goal.');
+  if (response.status === 'incomplete') {
+    const details = response.incomplete_details;
+    const reason = details && typeof details === 'object' && 'reason' in details ? details.reason : null;
+    if (reason === 'max_output_tokens') {
+      const usage = response.usage;
+      const count = usage && typeof usage === 'object' && 'output_tokens' in usage ? usage.output_tokens : null;
+      const usageText = typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? ' (' + count + ' output tokens used)' : '';
+      throw new Error('Meta reached the response token limit while planning your goal' + usageText + '. No desktop action was taken. Try a shorter goal; if this repeats, the plan response budget needs adjustment.');
+    }
+    if (reason === 'content_filter') throw new Error('Meta stopped planning because of a content filter. No desktop action was taken. Review the goal text.');
+    throw new Error('Meta stopped while planning your goal. No desktop action was taken. Try a shorter goal.');
+  }
   if (response.status === 'failed') throw new Error('Meta could not plan this goal. No desktop action was taken. Try again later.');
   if (response.status !== 'completed') throw new Error('Meta returned an unsupported plan response. No desktop action was taken.');
   if (!Array.isArray(response.output)) throw new Error('Meta returned an invalid plan response. No desktop action was taken.');

@@ -15,6 +15,8 @@ export interface ScreenObservation {
   readonly desktopHeight: number;
   readonly activeWindowId: string;
   readonly capturedAt: number;
+  /** Foreground window title for model context. Absent when unavailable. Never journaled. */
+  readonly activeWindowTitle?: string;
 }
 
 export interface RuntimeReadiness {

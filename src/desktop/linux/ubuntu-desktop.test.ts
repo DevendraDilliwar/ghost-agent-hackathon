@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
 import { desktopCapturer } from 'electron';
 import { UbuntuDesktop } from './ubuntu-desktop';
-import { executeX11Command } from './xdotool';
+import { executeX11Command, runXdotool } from './xdotool';
 
 vi.mock('electron', () => ({
   desktopCapturer: { getSources: vi.fn() },
@@ -49,5 +49,32 @@ describe('desktop observation with floating controls', () => {
     expect(controls.showInactive).toHaveBeenCalledOnce();
     expect(desktopCapturer.getSources).not.toHaveBeenCalled();
     expect(executeX11Command).not.toHaveBeenCalled();
+  });
+
+  it('reports the foreground window title for model context', async () => {
+    vi.useFakeTimers();
+    vi.mocked(runXdotool).mockImplementation(async (args: string[]) => args[0] === 'getwindowname' ? 'Terminal — dev' : '100');
+    const main = surface(true);
+    vi.mocked(desktopCapturer.getSources).mockResolvedValue([{ display_id: '1', thumbnail: { isEmpty: () => false, getSize: () => ({ width: 800, height: 600 }), toPNG: () => Buffer.from('synthetic') } }] as never);
+    const desktop = new UbuntuDesktop(main as unknown as BrowserWindow);
+    const pending = desktop.capture(new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(pending).resolves.toMatchObject({ activeWindowId: '100', activeWindowTitle: 'Terminal — dev' });
+  });
+
+  it('captures without a title when the window name is unavailable', async () => {
+    vi.useFakeTimers();
+    vi.mocked(runXdotool).mockImplementation(async (args: string[]) => {
+      if (args[0] === 'getwindowname') throw new Error('no window name');
+      return '100';
+    });
+    const main = surface(true);
+    vi.mocked(desktopCapturer.getSources).mockResolvedValue([{ display_id: '1', thumbnail: { isEmpty: () => false, getSize: () => ({ width: 800, height: 600 }), toPNG: () => Buffer.from('synthetic') } }] as never);
+    const desktop = new UbuntuDesktop(main as unknown as BrowserWindow);
+    const pending = desktop.capture(new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(250);
+    const observation = await pending;
+    expect(observation.activeWindowId).toBe('100');
+    expect(observation.activeWindowTitle).toBeUndefined();
   });
 });

@@ -324,6 +324,21 @@ describe('task lifecycle', () => {
     });
   });
 
+  it('tells the model which window is focused and when focus changes', async () => {
+    const { controller, desktop, model } = setup();
+    desktop.capture
+      .mockResolvedValueOnce({ ...frame, activeWindowId: '100', activeWindowTitle: 'Terminal' })
+      .mockResolvedValue({ ...frame, activeWindowId: '104', activeWindowTitle: 'Text Editor' });
+    model.decide.mockResolvedValueOnce(proposed).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    const firstHistory: string[] = model.decide.mock.calls[0]?.[0].history;
+    expect(firstHistory).toContain('Focused window: #100 (Terminal)');
+    const secondHistory: string[] = model.decide.mock.calls[1]?.[0].history;
+    expect(secondHistory).toContain('Focused window: #104 (Text Editor)');
+    expect(secondHistory).toContain('Focus changed: #100 → #104');
+  });
+
   it('fails before capture or inference when desktop preflight fails', async () => {
     const { controller, desktop, model } = setup();
     desktop.preflight.mockRejectedValueOnce(new Error('Unsupported desktop'));

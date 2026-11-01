@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import { createMainWindow } from './windows/create-main-window';
 import { loadDevelopmentEnvironment } from './config/load-environment';
+import { runEvalCli } from './eval/eval-runner';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -13,7 +14,20 @@ async function openMainWindow(): Promise<void> {
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes('--eval')) {
+  if (!app.requestSingleInstanceLock()) {
+    console.error('Ghost Agent is already running. Close it before eval: two drivers fight over one desktop.');
+    app.exit(2);
+  } else {
+    app.whenReady().then(async () => {
+      loadDevelopmentEnvironment();
+      app.exit(await runEvalCli());
+    }).catch((error: unknown) => {
+      console.error('Ghost eval crashed.', error);
+      app.exit(1);
+    });
+  }
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {

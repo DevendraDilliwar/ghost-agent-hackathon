@@ -61,4 +61,16 @@ describe('parsePlanResponse', () => {
     expect(() => parsePlanResponse(envelope('not json'))).toThrow('not return the plan as JSON');
     expect(() => parsePlanResponse(envelope('{}', { status: 'failed' }))).toThrow('could not plan this goal');
   });
+
+  it('names the token limit when planning runs out of room', () => {
+    expect(() => parsePlanResponse(envelope('{}', { status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' }, usage: { input_tokens: 40, output_tokens: 4096 } })))
+      .toThrow('response token limit while planning your goal (4096 output tokens used)');
+  });
+
+  it('names content filters and unknown stops distinctly', () => {
+    expect(() => parsePlanResponse(envelope('{}', { status: 'incomplete', incomplete_details: { reason: 'content_filter' } })))
+      .toThrow('content filter');
+    expect(() => parsePlanResponse(envelope('{}', { status: 'incomplete' }))).toThrow('stopped while planning');
+  });
 });

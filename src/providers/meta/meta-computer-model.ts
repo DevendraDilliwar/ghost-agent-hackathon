@@ -15,6 +15,7 @@ const instructions = [
   'Use only click, double_click, type, keypress, scroll, wait, or screenshot.',
   'For terminal work (files, folders, commands, checks) call run_shell with one shell command instead of driving the Terminal app by mouse. Prefer run_shell whenever text output answers the question; GUI apps still need mouse and keyboard actions.',
   'Never use run_shell for passwords, secrets, privilege escalation (no sudo or su), destructive commands, or fetching remote code into a shell. Read run_shell output as your observation: no screenshot follows a shell call.',
+  'If the app you need is already open and focused, use it instead of opening it again. When you need a fresh terminal, open a new window or tab rather than reusing a busy one.',
   'To replace the contents of a focused field, select all first with Ctrl+A, then type the replacement value.',
   'Observe the supplied screenshot and executed-step summary on every request. Never assume hidden state.',
   'Never interact with Ghost Agent itself or its controls, enter credentials, disclose secrets, make purchases, or change production resources.',
@@ -110,7 +111,8 @@ export class MetaComputerModel implements ModelPort {
 
   async plan(input: Parameters<ModelPort['plan']>[0]) {
     const response = await requestMeta(this.config, {
-      max_output_tokens: 1024, reasoning: { effort: 'low' }, instructions: planInstructions,
+      // Same allowance as decisions: multi-phase goals need room for reasoning plus the JSON.
+      max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: planInstructions,
       input: [{ role: 'user', content: [
         { type: 'input_text', text: 'Goal: ' + input.goal + '\nReturn only the JSON object.' },
       ] }],

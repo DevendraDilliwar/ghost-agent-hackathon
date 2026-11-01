@@ -56,6 +56,11 @@ export class TaskController {
   private pendingShell: string | null = null;
   /** Consecutive failed shell commands. Three in a row hands control to the user. */
   private shellFailures = 0;
+  /** Last seen foreground window, narrated to the model so it knows where it is. */
+  private lastWindowId: string | null = null;
+  private lastWindowTitle: string | null = null;
+  /** Recent focus transitions (IDs only) for decide() history. Never journaled. */
+  private focusChanges: string[] = [];
   private now: () => number;
   private clarifications: string[] = [];
   private noProgressStreak = 0;
@@ -96,6 +101,9 @@ export class TaskController {
     this.lastDecideMs = 0;
     this.pendingShell = null;
     this.shellFailures = 0;
+    this.lastWindowId = null;
+    this.lastWindowTitle = null;
+    this.focusChanges = [];
     this.lastGuidance = null;
     this.unmetStreak = 0;
     this.unmetNote = null;
@@ -271,6 +279,7 @@ export class TaskController {
       const observation = await this.dependencies.desktop.capture(signal);
       if (!this.current(generation, signal)) return;
       const captureMs = this.now() - captureStart;
+      this.noteWindowFocus(observation);
 
       let progressNote: string | null = null;
       if (execution) {
@@ -376,6 +385,10 @@ export class TaskController {
     history.push(...this.clarifications.map(answer => 'User clarification: ' + answer));
     const lastVerification = this.state.actions.at(-1)?.verification;
     if (lastVerification) history.push('Last step result: ' + lastVerification.summary);
+    history.push(...this.focusChanges.slice(-3));
+    if (this.lastWindowId) {
+      history.push('Focused window: #' + this.lastWindowId + (this.lastWindowTitle ? ' (' + this.lastWindowTitle + ')' : ''));
+    }
     if (progressNote) history.push(progressNote);
     if (this.unmetNote) {
       history.push(this.unmetNote);
@@ -481,6 +494,7 @@ export class TaskController {
     this.update({ status: 'observing', message: 'Capturing the selected test desktop.' });
     const frame = await this.dependencies.desktop.capture(signal);
     if (!this.current(generation, signal)) return null;
+    this.noteWindowFocus(frame);
     return frame;
   }
 
@@ -752,6 +766,21 @@ export class TaskController {
    * Advances the live step pointer from the model's [step N] tag. Best-effort:
    * garbage tags never move it and never break the loop.
    */
+  /**
+   * Tracks foreground-window identity across captures so the model knows
+   * which window it is in and stops re-opening what is already focused.
+   * History-only: window titles never reach the journal or checkpoints.
+   */
+  private noteWindowFocus(observation: ScreenObservation): void {
+    const id = observation.activeWindowId;
+    if (this.lastWindowId !== null && this.lastWindowId !== id) {
+      this.focusChanges.push('Focus changed: #' + this.lastWindowId + ' → #' + id);
+      if (this.focusChanges.length > 10) this.focusChanges.splice(0, this.focusChanges.length - 10);
+    }
+    this.lastWindowId = id;
+    this.lastWindowTitle = observation.activeWindowTitle?.slice(0, 200) ?? null;
+  }
+
   private noteStepTag(message: string): void {
     const match = /\[step\s+(\d+)\]/i.exec(message);
     if (!match) return;
