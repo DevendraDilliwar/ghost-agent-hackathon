@@ -8,8 +8,8 @@ export interface EvalVerdict {
 }
 
 export interface EvalTaskDeps {
-  /** Reads content.xml text from an .odt/.ods file. Null when unreadable. Injectable for tests. */
-  readOdtText?: (file: string) => string | null;
+  /** Reads a named zip entry from an .odt/.ods file. Null when unreadable. Injectable for tests. */
+  readOdtEntry?: (file: string, entry: string) => string | null;
 }
 
 export interface EvalTask {
@@ -23,13 +23,18 @@ export interface EvalTask {
   verify(root: string, deps?: EvalTaskDeps): EvalVerdict;
 }
 
-/** Extracts content.xml from a LibreOffice file. Null when unzip is missing or the file is unreadable. */
-export function readOdtText(file: string): string | null {
+/** Extracts a named zip entry from a LibreOffice file. Null when unzip is missing or the file is unreadable. */
+export function readOdtEntry(file: string, entry: string): string | null {
   try {
-    return execFileSync('unzip', ['-p', file, 'content.xml'], { maxBuffer: 4 * 1024 * 1024, timeout: 10_000 }).toString();
+    return execFileSync('unzip', ['-p', file, entry], { maxBuffer: 4 * 1024 * 1024, timeout: 10_000 }).toString();
   } catch {
     return null;
   }
+}
+
+/** Extracts content.xml from a LibreOffice file. Null when unzip is missing or the file is unreadable. */
+export function readOdtText(file: string): string | null {
+  return readOdtEntry(file, 'content.xml');
 }
 
 function freshDir(root: string, name: string): string {
@@ -39,19 +44,26 @@ function freshDir(root: string, name: string): string {
   return dir;
 }
 
-function odtVerdict(file: string, needle: RegExp | string, deps?: EvalTaskDeps): EvalVerdict {
+function odtVerdict(file: string, needle: RegExp | string, expectedMimetype: string, deps?: EvalTaskDeps): EvalVerdict {
   if (!existsSync(file)) return { pass: false, detail: 'Missing file: ' + file };
   const size = statSync(file).size;
-  const text = (deps?.readOdtText ?? readOdtText)(file);
+  const readEntry = deps?.readOdtEntry ?? readOdtEntry;
+  const text = readEntry(file, 'content.xml');
   if (text === null) {
     return size > 2000
       ? { pass: true, detail: 'Exists (' + size + ' bytes); content unreadable without unzip, size-only check.' }
       : { pass: false, detail: 'Too small (' + size + ' bytes) and content unreadable without unzip.' };
   }
   const found = typeof needle === 'string' ? text.includes(needle) : needle.test(text);
-  return found
+  if (!found) return { pass: false, detail: 'Exists (' + size + ' bytes) but expected content is missing.' };
+  // A hand-zipped file can carry the right XML but the wrong identity: only a
+  // real LibreOffice document ships its mimetype entry at the zip root.
+  const mimetype = readEntry(file, 'mimetype');
+  if (mimetype === null) return { pass: false, detail: 'Content matches but the mimetype entry is missing — not a real LibreOffice file.' };
+  const type = mimetype.trim();
+  return type === expectedMimetype
     ? { pass: true, detail: 'Exists (' + size + ' bytes) with expected content.' }
-    : { pass: false, detail: 'Exists (' + size + ' bytes) but expected content is missing.' };
+    : { pass: false, detail: 'Content matches but mimetype is "' + type.slice(0, 80) + '" — fabricated office file?' };
 }
 
 const terminalEcho: EvalTask = {
@@ -72,7 +84,7 @@ const writerDoc: EvalTask = {
   id: 'T2', name: 'writer-doc', kind: 'gui', maxSteps: 15, maxMinutes: 5,
   goal: root => 'Open LibreOffice Writer, write a document with the title "Eval Note" on the first line and "The quick brown fox." on the second line, and save it as ' + join(root, 't2', 'note.odt') + ' (create the folder first if needed)',
   setup: root => { freshDir(root, 't2'); },
-  verify: (root, deps) => odtVerdict(join(root, 't2', 'note.odt'), 'Eval Note', deps),
+  verify: (root, deps) => odtVerdict(join(root, 't2', 'note.odt'), 'Eval Note', 'application/vnd.oasis.opendocument.text', deps),
 };
 
 const fileOrganize: EvalTask = {
@@ -104,7 +116,7 @@ const mixedReport: EvalTask = {
     const disk = join(root, 't4', 'disk.txt');
     if (!existsSync(disk)) return { pass: false, detail: 'Missing file: ' + disk };
     if (!readFileSync(disk, 'utf8').includes('Filesystem')) return { pass: false, detail: 'disk.txt is not df output.' };
-    return odtVerdict(join(root, 't4', 'disk-report.odt'), /[0-9]+(\.[0-9]+)?\s*G/, deps);
+    return odtVerdict(join(root, 't4', 'disk-report.odt'), /[0-9]+(\.[0-9]+)?\s*G/, 'application/vnd.oasis.opendocument.text', deps);
   },
 };
 
@@ -112,7 +124,7 @@ const calcSum: EvalTask = {
   id: 'T5', name: 'calc-sum', kind: 'gui', maxSteps: 25, maxMinutes: 8,
   goal: root => 'Open LibreOffice Calc, enter 10 in cell A1, 20 in A2, 30 in A3, put a SUM formula adding them in A4, and save as ' + join(root, 't5', 'sum.ods') + ' (create the folder first if needed)',
   setup: root => { freshDir(root, 't5'); },
-  verify: (root, deps) => odtVerdict(join(root, 't5', 'sum.ods'), 'SUM(', deps),
+  verify: (root, deps) => odtVerdict(join(root, 't5', 'sum.ods'), 'SUM(', 'application/vnd.oasis.opendocument.spreadsheet', deps),
 };
 
 export const EVAL_TASKS: readonly EvalTask[] = [terminalEcho, writerDoc, fileOrganize, mixedReport, calcSum];

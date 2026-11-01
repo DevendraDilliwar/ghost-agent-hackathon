@@ -130,7 +130,10 @@ export class MetaComputerModel implements ModelPort {
         { type: 'input_text', text: 'Success condition: ' + input.condition +
           (input.steps?.length
             ? '\nPlanned steps:\n' + input.steps.map((step, index) => (index + 1) + ') ' + step.slice(0, 200)).join('\n').slice(0, 1500)
-            : '') + '\nIs this condition met on the screenshot? Return only the JSON object.' },
+            : '') +
+          (input.transcript?.length
+            ? '\nTerminal transcript (recent shell commands with outputs, newest last):\n- ' + input.transcript.join('\n- ').slice(0, 2500)
+            : '') + '\nIs this condition met on the screenshot and transcript? Return only the JSON object.' },
         { type: 'input_image', image_url: input.observation.image },
       ] }],
     }, input.signal, this.request);

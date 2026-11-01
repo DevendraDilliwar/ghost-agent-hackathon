@@ -30,7 +30,25 @@ describe('Meta computer-use adapter', () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response('secret-provider-debug-data', { status: 401 }));
     const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
     await expect(model.decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal })).rejects.toThrow('Meta authentication failed.');
+    expect(request).toHaveBeenCalledTimes(1);
   });
+
+  it('retries a transient Meta failure once and recovers', async () => {
+    const request = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error('socket hangup'))
+      .mockResolvedValueOnce(new Response(JSON.stringify(response)));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const decision = await model.decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(decision.action).toEqual({ type: 'click', x: 50, y: 60, button: 'left' });
+  });
+
+  it('gives up after three transient failures without retrying auth errors', async () => {
+    const flaky = vi.fn<typeof fetch>().mockRejectedValue(new Error('socket hangup'));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, flaky);
+    await expect(model.decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal })).rejects.toThrow('Could not reach Meta');
+    expect(flaky).toHaveBeenCalledTimes(3);
+  }, 15_000);
 
   it('refuses an incomplete response rather than executing partial output', () => {
     expect(() => parseMetaDecision({ ...response, status: 'incomplete' }, frame)).toThrow('incomplete');
@@ -231,6 +249,22 @@ describe('Meta computer-use adapter', () => {
     expect(body.model).toBe('muse-wonder-1.0');
     expect(body.tools).toBeUndefined();
     expect(result).toMatchObject({ confirmed: false, detail: 'Still on the loading screen.', inputTokens: 55, outputTokens: 9 });
+  });
+
+  it('includes the terminal transcript in the success audit when shell steps ran', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 55, output_tokens: 9 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"confirmed":true,"detail":"File verified."}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const result = await model.verifySuccess({
+      condition: 'hello.txt contains hello eval', transcript: ['$ mkdir -p /tmp/t1 → Shell exit 0: ok'],
+      observation: frame, signal: new AbortController().signal,
+    });
+    const sent = String(request.mock.calls[0]![1]?.body);
+    expect(sent).toContain('Terminal transcript');
+    expect(sent).toContain('$ mkdir -p /tmp/t1');
+    expect(result.confirmed).toBe(true);
   });
 
 });

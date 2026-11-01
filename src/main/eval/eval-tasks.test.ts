@@ -49,7 +49,10 @@ describe('eval tasks', () => {
   it('passes doc tasks with stubbed office content', () => {
     const root = freshRoot();
     const xml = '<office:document><text:p>Eval Note</text:p><text:p>20G disk</text:p><table:formula>oooc:=SUM(A1:A3)</table:formula></office:document>';
-    const deps = { readOdtText: () => xml };
+    const deps = {
+      readOdtEntry: (file: string, entry: string) => entry === 'content.xml' ? xml
+        : file.endsWith('.ods') ? 'application/vnd.oasis.opendocument.spreadsheet' : 'application/vnd.oasis.opendocument.text',
+    };
     for (const task of [EVAL_TASKS[1]!, EVAL_TASKS[3]!, EVAL_TASKS[4]!]) task.setup(root);
     writeFileSync(join(root, 't2', 'note.odt'), 'fake-bytes');
     writeFileSync(join(root, 't4', 'disk.txt'), 'Filesystem Size Used\n/dev/sda 20G 5G\n');
@@ -58,9 +61,22 @@ describe('eval tasks', () => {
     expect(EVAL_TASKS[1]!.verify(root, deps).pass).toBe(true);
     expect(EVAL_TASKS[3]!.verify(root, deps).pass).toBe(true);
     expect(EVAL_TASKS[4]!.verify(root, deps).pass).toBe(true);
-    expect(EVAL_TASKS[1]!.verify(root, { readOdtText: () => 'empty doc' }).pass).toBe(false);
+    expect(EVAL_TASKS[1]!.verify(root, { readOdtEntry: () => 'empty doc' }).pass).toBe(false);
     writeFileSync(join(root, 't4', 'disk.txt'), 'not df output\n');
     expect(EVAL_TASKS[3]!.verify(root, deps).pass).toBe(false);
+  });
+
+  it('rejects office files with missing or wrong mimetype even when content matches', () => {
+    const root = freshRoot();
+    const xml = '<office:document><text:p>Eval Note</text:p></office:document>';
+    EVAL_TASKS[1]!.setup(root);
+    writeFileSync(join(root, 't2', 'note.odt'), 'fake-bytes');
+    const missing = EVAL_TASKS[1]!.verify(root, { readOdtEntry: (_file: string, entry: string) => entry === 'content.xml' ? xml : null });
+    expect(missing.pass).toBe(false);
+    expect(missing.detail).toContain('mimetype');
+    const wrong = EVAL_TASKS[1]!.verify(root, { readOdtEntry: (_file: string, entry: string) => entry === 'content.xml' ? xml : 'application/zip' });
+    expect(wrong.pass).toBe(false);
+    expect(wrong.detail).toContain('fabricated');
   });
 
   it('readOdtText returns null for missing files', () => {

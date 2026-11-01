@@ -267,9 +267,18 @@ export class TaskController {
       }
       await this.dependencies.desktop.preflight(signal);
       if (!this.current(generation, signal)) return;
+      let failedActionId: string | null = null;
+      let executionError: string | null = null;
       if (execution) {
-        for (const action of execution.actions) {
-          await this.dependencies.desktop.execute(action, execution.observation, signal);
+        for (let index = 0; index < execution.actions.length; index++) {
+          try {
+            await this.dependencies.desktop.execute(execution.actions[index]!, execution.observation, signal);
+          } catch (error) {
+            if (!this.current(generation, signal)) return;
+            failedActionId = execution.actionIds[index] ?? null;
+            executionError = error instanceof Error ? error.message : String(error);
+            break;
+          }
           if (!this.current(generation, signal)) return;
         }
       }
@@ -317,11 +326,29 @@ export class TaskController {
             verification = { status: 'human_intervention_needed', visualDeltaPercent: delta.visualDeltaPercent, summary: 'PRISM: typed value not visible on screen.', recoverySuggestion: check.detail, verifiedAt: Date.now() };
           }
         }
+        if (executionError) {
+          // Input itself failed, so no screen change is expected: feed the
+          // standard stall path so the run retries instead of dying outright.
+          progressed = false;
+          verification = {
+            status: 'stalled_no_change', visualDeltaPercent: delta.visualDeltaPercent,
+            summary: 'Desktop input failed: ' + executionError.slice(0, 300) + '. The screen is unchanged; retry differently or work around it.',
+            verifiedAt: Date.now(),
+          };
+        }
         verification = { ...verification, summary: this.withTiming(verification.summary, captureMs + verifyMs) };
         const batchIds = new Set(execution.actionIds);
+        const failedAt = failedActionId ? execution.actionIds.indexOf(failedActionId) : 0;
         this.state = {
           ...this.state,
-          actions: this.state.actions.map(action => batchIds.has(action.id) ? { ...action, status: 'executed', verification } : action),
+          actions: this.state.actions.map(action => {
+            if (!batchIds.has(action.id)) return action;
+            if (executionError === null) return { ...action, status: 'executed', verification };
+            const position = execution.actionIds.indexOf(action.id);
+            if (position >= 0 && position < failedAt) return { ...action, status: 'executed', verification };
+            if (position === failedAt) return { ...action, status: 'failed', verification };
+            return { ...action, status: 'failed', verification: { ...verification, summary: 'Skipped: earlier batch input failed.' } };
+          }),
         };
         this.unmetStreak = 0;
         this.record('verify', verification.status === 'verified_success' ? 'success' : verification.status === 'stalled_no_change' ? 'stalled' : 'failure',
@@ -811,7 +838,15 @@ export class TaskController {
   private async confirmPhaseSuccess(observation: ScreenObservation, signal: AbortSignal, generation: number): Promise<boolean> {
     const phase = this.mission?.currentPhase();
     if (!phase?.success) return true;
-    const check = await this.dependencies.model.verifySuccess({ condition: phase.success, steps: [...phase.steps], observation, signal });
+    const transcript = this.state.actions
+      .filter(action => action.type === 'shell' && action.status === 'executed' && action.verification)
+      .slice(-5)
+      .map(action => action.description.slice(0, 200) + ' → ' + (action.verification?.summary ?? '').slice(0, 400));
+    const check = await this.dependencies.model.verifySuccess({
+      condition: phase.success, steps: [...phase.steps],
+      ...(transcript.length ? { transcript } : {}),
+      observation, signal,
+    });
     if (!this.current(generation, signal)) return false;
     const inputTokens = this.state.inputTokens + check.inputTokens;
     const outputTokens = this.state.outputTokens + check.outputTokens;

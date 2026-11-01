@@ -344,6 +344,19 @@ describe('task lifecycle', () => {
       expect(desktop.execute.mock.calls[0]?.[0]).toMatchObject({ type: 'click', x: 10, y: 10 });
     });
 
+    it('passes the terminal transcript to the phase verifier', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'Expense-Nov' }));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValueOnce(shellDecision('ls ~/Documents')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      const transcript = model.verifySuccess.mock.calls[0]?.[0].transcript as string[] | undefined;
+      expect(transcript).toHaveLength(1);
+      expect(transcript?.[0]).toContain('$ ls ~/Documents');
+      expect(transcript?.[0]).toContain('Shell exit 0');
+      expect(transcript?.[0]).toContain('Expense-Nov');
+    });
+
     it('fails cleanly when text-mode actions fall outside the fresh screenshot', async () => {
       const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'created' }));
       const { controller, model } = setup({ shell: { run }, validateAction: () => { throw new Error('out of bounds'); } });
@@ -353,6 +366,37 @@ describe('task lifecycle', () => {
       await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
       expect(controller.getSnapshot().message).toContain('outside the fresh screenshot');
     });
+  });
+
+  it('retries a failed desktop input instead of failing the run', async () => {
+    const { controller, desktop } = setup();
+    desktop.execute.mockRejectedValueOnce(new Error('windowactivate failed')).mockResolvedValue(undefined);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(desktop.execute).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().actions[0]?.status).toBe('failed');
+    expect(controller.getSnapshot().handoff?.reason).toContain('failed: Click the test target');
+  });
+
+  it('lets Stop unwind an in-flight desktop input without failing the run', async () => {
+    const { controller, desktop, model } = setup();
+    model.decide.mockResolvedValueOnce(proposed).mockResolvedValue(finished);
+    desktop.execute.mockImplementationOnce((...args: unknown[]) => {
+      const signal = args[2] as AbortSignal;
+      return new Promise<void>((resolvePromise, rejectPromise) => {
+        if (signal.aborted) {
+          rejectPromise(new Error('aborted'));
+          return;
+        }
+        signal.addEventListener('abort', () => rejectPromise(new Error('aborted')), { once: true });
+        void resolvePromise;
+      });
+    });
+    const run = controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(desktop.execute).toHaveBeenCalledTimes(1));
+    controller.stop(run.runId!);
+    await flush();
+    expect(controller.getSnapshot().status).toBe('stopped');
   });
 
   it('tells the model which window is focused and when focus changes', async () => {

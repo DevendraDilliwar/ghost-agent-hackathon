@@ -102,6 +102,8 @@ export interface ModelPort {
     condition: string;
     /** Numbered planned steps for the completion audit. Omit when the phase has none. */
     steps?: string[];
+    /** Recent executed shell commands with their outputs, newest last. Omit when the phase used no shell. */
+    transcript?: string[];
     observation: ScreenObservation;
     signal: AbortSignal;
   }): Promise<VerifyDecision>;
