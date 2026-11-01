@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { UIGroundingEngine } from './ui-grounding';
 import type { GroundedElement } from '../../shared/contracts/grounding';
 
@@ -38,6 +38,19 @@ describe('UIGroundingEngine', () => {
     expect(result.elements).toHaveLength(1);
     expect(result.elements[0]).toMatchObject({ id: 1, label: 'Save' });
     expect(result.totalElements).toBe(1);
+  });
+
+  it('consumes a prefetched walk instead of detecting again', async () => {
+    const detect = vi.fn();
+    const engine = new UIGroundingEngine(detect);
+    const prefetch = Promise.resolve([{
+      id: 9, type: 'button' as const, label: 'Save',
+      bounds: { x: 100, y: 200, width: 140, height: 36 },
+      center: { x: 170, y: 218 }, confidence: 0.9,
+    }]);
+    const result = await engine.groundScreen(mockObservation, new AbortController().signal, prefetch);
+    expect(detect).not.toHaveBeenCalled();
+    expect(result.elements).toMatchObject([{ id: 1, label: 'Save' }]);
   });
 
   it('falls back to zero elements when the detector fails or hangs', async () => {

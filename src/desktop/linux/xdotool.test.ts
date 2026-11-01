@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeX11Command, runXdotool } from './xdotool';
+import { executeX11Command, listWindows, runXdotool } from './xdotool';
 import type { ScreenObservation } from '../../shared/contracts/desktop';
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
@@ -73,5 +73,34 @@ describe('X11 input process boundary', () => {
   it('reports failed input without returning subprocess output to the caller', async () => {
     exitCode = 1;
     await expect(runXdotool(['getdisplaygeometry'], new AbortController().signal)).rejects.toThrow('Desktop input failed or was interrupted.');
+  });
+
+  it('lists visible windows with titles for stall recovery', async () => {
+    vi.mocked(spawn).mockImplementation((...parameters: unknown[]) => {
+      const args = parameters[1] as string[];
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(), stdin: new PassThrough(), kill: vi.fn(),
+      });
+      queueMicrotask(() => {
+        if (args[0] === 'search') child.stdout.write('100\n200\n');
+        if (args[0] === 'getwindowname') child.stdout.write(args[1] === '100' ? 'Terminal - ghost' : 'Untitled - Writer');
+        child.emit('close', 0);
+      });
+      return child as unknown as ReturnType<typeof spawn>;
+    });
+    const windows = await listWindows(new AbortController().signal);
+    expect(windows).toEqual([{ id: '100', title: 'Terminal - ghost' }, { id: '200', title: 'Untitled - Writer' }]);
+    expect((vi.mocked(spawn).mock.calls[0]![1] as string[]).slice(0, 3)).toEqual(['search', '--onlyvisible', '--name']);
+  });
+
+  it('yields no windows when the search fails', async () => {
+    vi.mocked(spawn).mockImplementation(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(), stdin: new PassThrough(), kill: vi.fn(),
+      });
+      queueMicrotask(() => child.emit('close', 1));
+      return child as unknown as ReturnType<typeof spawn>;
+    });
+    await expect(listWindows(new AbortController().signal)).resolves.toEqual([]);
   });
 });

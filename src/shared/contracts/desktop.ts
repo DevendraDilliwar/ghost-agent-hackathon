@@ -19,6 +19,11 @@ export interface ScreenObservation {
   readonly activeWindowTitle?: string;
 }
 
+export interface DesktopWindow {
+  readonly id: string;
+  readonly title: string;
+}
+
 export interface RuntimeReadiness {
   readonly ready: boolean;
   readonly modelConfigured: boolean;

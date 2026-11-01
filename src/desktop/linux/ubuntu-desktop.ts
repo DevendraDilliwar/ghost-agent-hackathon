@@ -5,7 +5,7 @@ import { desktopCapturer, screen } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { DesktopPort } from '../../agent/ports';
 import type { DesktopCommand, ScreenObservation } from '../../shared/contracts/desktop';
-import { executeX11Command, getRootGeometry, runXdotool } from './xdotool';
+import { executeX11Command, getRootGeometry, listWindows, runXdotool } from './xdotool';
 
 export class UbuntuDesktop implements DesktopPort {
   private hiddenDepth = 0;
@@ -61,6 +61,10 @@ export class UbuntuDesktop implements DesktopPort {
       await executeX11Command(action, observation, signal);
       await delay(action.type === 'wait' ? 1000 : 200, undefined, { signal });
     });
+  }
+
+  async listWindows(signal: AbortSignal): Promise<import('../../shared/contracts/desktop').DesktopWindow[]> {
+    return listWindows(signal);
   }
 
   private async withHiddenWindow<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {

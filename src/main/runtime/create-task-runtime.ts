@@ -6,12 +6,17 @@ import os from 'node:os';
 import { FileJournal } from '../../observability/journal';
 import { CheckpointStore } from '../../observability/checkpoint-store';
 import { RunHistoryStore, toRunRecord } from '../../observability/run-history-store';
+import { SkillStore } from '../../observability/skill-store';
+import { MemoryStore } from '../../observability/memory-store';
 import type { RunRecord, RunSummary } from '../../shared/contracts/history';
 import type { MissionSummary } from '../../shared/contracts/mission';
 import { TaskController } from '../../agent/task-controller';
+import { SkillMemory } from '../../agent/memory/skill-memory';
+import { CrossTaskMemory } from '../../agent/memory/cross-task-memory';
 import { UIGroundingEngine } from '../../agent/vision/ui-grounding';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
 import { createAtspiDetector } from '../../desktop/linux/atspi-reader';
+import { TesseractOcr } from '../../desktop/linux/tesseract-ocr';
 import { LocalShell } from '../../desktop/linux/local-shell';
 import { MetaComputerModel } from '../../providers/meta/meta-computer-model';
 import { describeCommand, validateDesktopCommand } from '../../policy/task-validation';
@@ -54,6 +59,22 @@ function historyDirectory(): string {
     return join(app.getPath('userData'), 'nomcp-history');
   } catch {
     return join(os.tmpdir(), 'nomcp-history');
+  }
+}
+
+function skillsDirectory(): string {
+  try {
+    return join(app.getPath('userData'), 'nomcp-skills');
+  } catch {
+    return join(os.tmpdir(), 'nomcp-skills');
+  }
+}
+
+function memoryDirectory(): string {
+  try {
+    return join(app.getPath('userData'), 'nomcp-memory');
+  } catch {
+    return join(os.tmpdir(), 'nomcp-memory');
   }
 }
 
@@ -100,11 +121,17 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   const journal = new FileJournal(journalDirectory());
   const checkpoints = new CheckpointStore(missionsDirectory());
   const history = new RunHistoryStore(historyDirectory());
+  const skills = new SkillMemory();
   const controller = new TaskController({
     checkpoints,
     journal,
     desktop,
     shell: new LocalShell(),
+    skills,
+    skillStore: new SkillStore(skillsDirectory()),
+    crossTaskMemory: new CrossTaskMemory(),
+    memoryStore: new MemoryStore(memoryDirectory()),
+    ocr: new TesseractOcr(),
     model: {
       decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input),
       parseIntent: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).parseIntent(input),

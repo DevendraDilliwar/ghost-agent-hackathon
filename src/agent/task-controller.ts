@@ -1,9 +1,11 @@
 import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
-import type { CheckpointPort, DesktopPort, ModelDecision, ModelPort, PlanDecision, ShellPort, VerifyDecision } from './ports';
+import type { CheckpointPort, DesktopPort, MemoryStorePort, ModelDecision, ModelPort, OcrPort, PlanDecision, ShellPort, SkillStorePort, VerifyDecision } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
+import { SkillMemory } from './memory/skill-memory';
+import { CrossTaskMemory } from './memory/cross-task-memory';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
-import type { GroundingResult } from '../shared/contracts/grounding';
+import type { GroundedElement, GroundingResult } from '../shared/contracts/grounding';
 import { defaultGroundingEngine } from './vision/ui-grounding';
 import type { UIGroundingEngine } from './vision/ui-grounding';
 import { defaultPrismVerifier } from './vision/prism-verifier';
@@ -22,12 +24,23 @@ interface BatchExecution {
 export interface ControllerDependencies {
   desktop: DesktopPort;
   model: ModelPort;
-  grounding?: Pick<UIGroundingEngine, 'groundScreen' | 'snapToNearestElement'>;
+  grounding?: Pick<UIGroundingEngine, 'groundScreen' | 'snapToNearestElement'> & {
+    detectRaw?(signal: AbortSignal): Promise<Array<import('../shared/contracts/grounding').GroundedElement>>;
+  };
   recovery?: Pick<ErrorLoop, 'decide' | 'story'>;
   checkpoints?: CheckpointPort;
   journal?: JournalSink;
   /** Terminal executor for run_shell steps. Absent in tests and minimal hosts. */
   shell?: ShellPort;
+  /** Shared skill library. One instance spans runs so later tasks learn from earlier wins. */
+  skills?: SkillMemory;
+  /** Durable skill backing. Absent in tests, eval, and minimal hosts. */
+  skillStore?: SkillStorePort;
+  /** Shared cross-task memory plus its disk backing. Absent in tests and eval. */
+  crossTaskMemory?: CrossTaskMemory;
+  memoryStore?: MemoryStorePort;
+  /** Local OCR for free typed-text checks. Absent without tesseract. */
+  ocr?: OcrPort;
   id: () => string;
   describe: (action: DesktopCommand) => string;
   validateAction: (action: unknown, observation: ScreenObservation) => DesktopCommand;
@@ -109,9 +122,16 @@ export class TaskController {
   private lastGuidance: string | null = null;
   private unmetStreak = 0;
   private unmetNote: string | null = null;
+  private readonly skills: SkillMemory;
+  private phaseShellCommands: string[] = [];
+  private skillsLoaded = false;
+  private readonly crossMemory: CrossTaskMemory;
+  private memoryLoaded = false;
 
   constructor(private readonly dependencies: ControllerDependencies) {
     this.now = dependencies.now ?? Date.now;
+    this.skills = dependencies.skills ?? new SkillMemory();
+    this.crossMemory = dependencies.crossTaskMemory ?? new CrossTaskMemory();
   }
 
   getSnapshot(): TaskSnapshot {
@@ -142,6 +162,7 @@ export class TaskController {
     this.lastSentFrame = null;
     this.lastGrounding = null;
     this.replanCount = 0;
+    this.phaseShellCommands = [];
     this.approvalMode = configuration.approvalMode ?? 'full_access';
     const runId = this.dependencies.id();
     if (configuration.resume) {
@@ -292,6 +313,8 @@ export class TaskController {
 
   private async advance(signal: AbortSignal, generation: number, execution?: BatchExecution): Promise<void> {
     try {
+      await this.loadSkills();
+      await this.loadMemory();
       if (this.pendingResume && !this.mission) {
         const ready = await this.ensureResumed(signal, generation);
         if (!ready || !this.current(generation, signal)) return;
@@ -324,6 +347,11 @@ export class TaskController {
       if (!this.current(generation, signal)) return;
       const captureMs = this.now() - captureStart;
       this.noteWindowFocus(observation);
+      // Overlap: walk the UI tree while this step verifies, so detection
+      // hides under capture and judge latency. Cached frames skip the walk.
+      const walkEngine = this.dependencies.grounding ?? defaultGroundingEngine;
+      const frameCached = this.lastGrounding !== null && observation.image === this.lastGrounding.image;
+      const groundingWork = !frameCached && walkEngine.detectRaw ? walkEngine.detectRaw(signal) : null;
 
       let progressNote: string | null = null;
       if (execution) {
@@ -342,19 +370,15 @@ export class TaskController {
         } else if (typed.length) {
           const verifyStart = this.now();
           const text = typed.map(item => item.text).join('\n');
+          const ocrHit = await this.ocrContains(observation, text, signal);
+          if (!this.current(generation, signal)) return;
           let check: VerifyDecision;
-          try {
-            check = await this.dependencies.model.verifyText({ text, observation, signal });
-          } catch {
-            if (!this.current(generation, signal)) return;
-            try {
-              check = await this.dependencies.model.verifyText({ text, observation, signal });
-            } catch {
-              if (!this.current(generation, signal)) return;
-              // Judge silent: the typed text may be on screen, so feed the
-              // standard stall path instead of killing the run over one call.
-              check = { confirmed: false, detail: 'The typed-text judge did not answer; treated as not visible.', inputTokens: 0, outputTokens: 0 };
-            }
+          if (ocrHit) {
+            check = { confirmed: true, detail: 'Local OCR found the typed value on screen.', inputTokens: 0, outputTokens: 0 };
+          } else {
+            const judged = await this.judgeTypedText(text, observation, signal, generation);
+            if (!judged || !this.current(generation, signal)) return;
+            check = judged;
           }
           verifyMs = this.now() - verifyStart;
           if (!this.current(generation, signal)) return;
@@ -421,16 +445,17 @@ export class TaskController {
           if (recovery.kind === 'retry') {
             this.noProgressStreak += 1;
             this.lastGuidance = recovery.guidance;
-            progressNote = recovery.guidance;
+            progressNote = recovery.guidance + (await this.windowInventoryNote(signal));
           } else {
             if (this.cappedStall(recovery.reason)) return;
             this.record('stall', 'stalled', recovery.reason.slice(0, 200));
+            this.learnFromHandoff(recovery.reason);
             this.yieldToUser({ kind: 'manual', reason: recovery.reason });
             return;
           }
         }
       }
-      await this.decideNext(signal, generation, observation, progressNote);
+      await this.decideNext(signal, generation, observation, progressNote, groundingWork);
     } catch (error) {
       if (this.current(generation, signal)) {
         this.fail(error instanceof Error ? error.message : 'The task could not continue.');
@@ -443,14 +468,14 @@ export class TaskController {
    * visual loop; with null (after a terminal command) the model decides from
    * text output alone and no screenshot is taken unless it asks for the screen.
    */
-  private async decideNext(signal: AbortSignal, generation: number, observation: ScreenObservation | null, progressNote: string | null): Promise<void> {
+  private async decideNext(signal: AbortSignal, generation: number, observation: ScreenObservation | null, progressNote: string | null, groundingWork: Promise<GroundedElement[]> | null = null): Promise<void> {
     const engine = this.dependencies.grounding ?? defaultGroundingEngine;
     let grounding: GroundingResult | null = null;
     if (observation) {
       if (this.lastGrounding && observation.image === this.lastGrounding.image) {
         grounding = this.lastGrounding.result;
       } else {
-        grounding = await engine.groundScreen(observation, signal);
+        grounding = await engine.groundScreen(observation, signal, groundingWork);
         this.lastGrounding = { image: observation.image, result: grounding };
       }
     }
@@ -488,6 +513,16 @@ export class TaskController {
       }
       if (phase.success) history.unshift('Phase done when: ' + phase.success);
       history.unshift('Current phase [' + phase.domain + ']: ' + phase.goal);
+    }
+    const mistakes = phase ? this.crossMemory.mistakesFor(phase.domain) : [];
+    if (mistakes.length) {
+      history.unshift('Past trouble here: ' + mistakes.join(' // ').slice(0, 600) + ' Avoid repeating these.');
+    }
+    const skills = this.skills.suggest(this.state.goal, phase?.domain ?? null);
+    if (skills.length) {
+      history.unshift('Skills from past wins: ' + skills
+        .map(skill => skill.name + ': ' + skill.commands.join(' | ')).join(' // ').slice(0, 900) +
+        '. Reuse these proven commands when they fit.');
     }
     const decideStart = this.now();
     // Frame cache: an unchanged screenshot is not worth resending — the model
@@ -714,13 +749,16 @@ export class TaskController {
     this.persistPhase();
     if (!failed) {
       this.shellFailures = 0;
+      this.phaseShellCommands.push(command);
       return;
     }
     if (++this.shellFailures >= 3) {
       this.shellFailures = 0;
-      this.yieldToUser({ kind: 'manual', reason: ('Three terminal commands failed in a row. Last: $ ' + command.slice(0, 200) +
+      const shellReason = ('Three terminal commands failed in a row. Last: $ ' + command.slice(0, 200) +
         ' → exit ' + result.exitCode + ': ' + excerpt.slice(0, 300) +
-        ' Take control of the desktop, fix the terminal state, then resume - or stop the run.').slice(0, 1000) });
+        ' Take control of the desktop, fix the terminal state, then resume - or stop the run.').slice(0, 1000);
+      this.learnFromHandoff(shellReason);
+      this.yieldToUser({ kind: 'manual', reason: shellReason });
     }
   }
 
@@ -947,16 +985,15 @@ export class TaskController {
         // decision to the user instead of failing a finished run.
         this.record('verify', 'failure', 'Phase judge did not answer; decision left to the user.');
         const recovery = this.dependencies.recovery ?? defaultErrorLoop;
-        this.yieldToUser({
-          kind: 'manual',
-          reason: recovery.story({
-            phase: this.phaseContext(),
-            recentAttempts: this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
-              .map(action => action.status + ': ' + action.description),
-            verificationSummary: 'Phase work finished but the success judge did not answer. The files may already be complete — verify them before resuming or stopping.',
-            priorGuidance: this.lastGuidance,
-          }),
+        const judgeReason = recovery.story({
+          phase: this.phaseContext(),
+          recentAttempts: this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
+            .map(action => action.status + ': ' + action.description),
+          verificationSummary: 'Phase work finished but the success judge did not answer. The files may already be complete — verify them before resuming or stopping.',
+          priorGuidance: this.lastGuidance,
         });
+        this.learnFromHandoff(judgeReason);
+        this.yieldToUser({ kind: 'manual', reason: judgeReason });
         return false;
       }
     }
@@ -979,7 +1016,13 @@ export class TaskController {
     if (check.confirmed) {
       this.unmetStreak = 0;
       this.stallCycles = 0;
+      const shellSteps = this.phaseShellCommands.splice(0);
+      const skill = this.skills.record(phase.domain, phase.goal, shellSteps);
       this.record('verify', 'success', 'Phase success confirmed: ' + phase.success);
+      if (skill) {
+        this.record('mission', 'info', 'Skill recorded: ' + skill.name);
+        void this.persistSkills();
+      }
       return true;
     }
     this.record('verify', 'failure', 'Phase success not met: ' + check.detail);
@@ -995,6 +1038,7 @@ export class TaskController {
         priorGuidance: this.lastGuidance,
       });
       if (this.cappedStall(reason)) return false;
+      this.learnFromHandoff(reason);
       this.yieldToUser({ kind: 'manual', reason });
       return false;
     }
@@ -1037,6 +1081,7 @@ export class TaskController {
     }
     try {
       const failed = mission.failPhase(phase.phaseId, 'Success unmet twice: ' + detail.slice(0, 200));
+      this.phaseShellCommands.splice(0);
       this.persistPhase(failed);
       const first = mission.replanRemaining(decision.phases);
       mission.startPhase(first.phaseId);
@@ -1071,6 +1116,53 @@ export class TaskController {
     } catch {
       return false;
     }
+  }
+
+  /** Loads the disk skill library once; a damaged file never blocks a run. */
+  private async loadSkills(): Promise<void> {
+    const store = this.dependencies.skillStore;
+    if (!store || this.skillsLoaded) return;
+    this.skillsLoaded = true;
+    try {
+      this.skills.merge(SkillMemory.restore(await store.load()).serialize());
+    } catch {
+      // Without disk skills the run continues on live learning alone.
+    }
+  }
+
+  private async persistSkills(): Promise<void> {
+    try {
+      await this.dependencies.skillStore?.save(this.skills.serialize());
+    } catch {
+      // Best-effort; the live run continues without persistence.
+    }
+  }
+
+  /** Loads disk mistakes once; damage never blocks a run. */
+  private async loadMemory(): Promise<void> {
+    const store = this.dependencies.memoryStore;
+    if (!store || this.memoryLoaded) return;
+    this.memoryLoaded = true;
+    try {
+      this.crossMemory.merge(CrossTaskMemory.restore(await store.load()).serialize());
+    } catch {
+      // Without disk memory the run continues on live learning alone.
+    }
+  }
+
+  private async persistMemory(): Promise<void> {
+    try {
+      await this.dependencies.memoryStore?.save(this.crossMemory.serialize());
+    } catch {
+      // Best-effort; the live run continues without persistence.
+    }
+  }
+
+  /** Remembers a real escalation under the active phase domain. */
+  private learnFromHandoff(reason: string): void {
+    const domain = this.mission?.currentPhase()?.domain ?? null;
+    if (!domain) return;
+    if (this.crossMemory.recordMistake(domain, reason)) void this.persistMemory();
   }
 
   /** Best-effort durable snapshot of the active phase. Never throws. */
@@ -1117,6 +1209,52 @@ export class TaskController {
   }
 
   /** Domain-scoped phase context for recovery stories. Never throws. */
+  /** Free typed-text check. False when OCR is missing, fails, or finds nothing. */
+  private async ocrContains(observation: ScreenObservation, text: string, signal: AbortSignal): Promise<boolean> {
+    const ocr = this.dependencies.ocr;
+    if (!ocr) return false;
+    try {
+      const seen = await ocr.readText(observation.image, signal);
+      const flat = seen.toLowerCase().replace(/\s+/g, ' ');
+      const lines = text.toLowerCase().split('\n').map(line => line.trim()).filter(line => line);
+      return lines.length > 0 && lines.every(line => flat.includes(line));
+    } catch {
+      return false;
+    }
+  }
+
+  /** Paid typed-text judge with one retry; null when the run moved on. */
+  private async judgeTypedText(text: string, observation: ScreenObservation, signal: AbortSignal, generation: number): Promise<VerifyDecision | null> {
+    try {
+      return await this.dependencies.model.verifyText({ text, observation, signal });
+    } catch {
+      if (!this.current(generation, signal)) return null;
+      try {
+        return await this.dependencies.model.verifyText({ text, observation, signal });
+      } catch {
+        if (!this.current(generation, signal)) return null;
+        // Judge silent: the typed text may be on screen, so feed the
+        // standard stall path instead of killing the run over one call.
+        return { confirmed: false, detail: 'The typed-text judge did not answer; treated as not visible.', inputTokens: 0, outputTokens: 0 };
+      }
+    }
+  }
+
+  /** Best-effort open-window list so a retry can focus the right window first. */
+  private async windowInventoryNote(signal: AbortSignal): Promise<string> {
+    const list = this.dependencies.desktop.listWindows;
+    if (!list) return '';
+    try {
+      const windows = (await list(signal)).slice(0, 8);
+      if (!windows.length) return '';
+      return ' Open windows (' + windows.length + '): ' +
+        windows.map(window => '#' + window.id + ' ' + window.title.slice(0, 60)).join(' | ').slice(0, 500) +
+        '. If your target lives in another window, focus it first, then act.';
+    } catch {
+      return '';
+    }
+  }
+
   private phaseContext(): import('../shared/contracts/mission').PhaseContext | null {
     try {
       const current = this.mission?.currentPhase();

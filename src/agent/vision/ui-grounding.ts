@@ -28,13 +28,17 @@ export class UIGroundingEngine {
    * optional and never blocks or breaks a run. Never invent boxes from
    * screen proportions: guessed tags misdirect clicks.
    */
-  async groundScreen(observation: Pick<ScreenObservation, 'width' | 'height' | 'image'>, signal: AbortSignal = new AbortController().signal): Promise<GroundingResult> {
-    let found: GroundedElement[];
+  /** Raw element walk without framing. Lets callers overlap detection with capture. */
+  async detectRaw(signal: AbortSignal = new AbortController().signal): Promise<GroundedElement[]> {
     try {
-      found = (await withTimeout(this.detect(signal), this.timeoutMs)) ?? [];
+      return (await withTimeout(this.detect(signal), this.timeoutMs)) ?? [];
     } catch {
-      found = [];
+      return [];
     }
+  }
+
+  async groundScreen(observation: Pick<ScreenObservation, 'width' | 'height' | 'image'>, signal: AbortSignal = new AbortController().signal, prefetch: Promise<GroundedElement[]> | null = null): Promise<GroundingResult> {
+    const found = prefetch ? await prefetch.catch(() => []) : await this.detectRaw(signal);
     const elements = found
       .filter(element => [element.bounds.x, element.bounds.y, element.bounds.width, element.bounds.height].every(Number.isFinite)
         && element.bounds.width >= 3 && element.bounds.height >= 3

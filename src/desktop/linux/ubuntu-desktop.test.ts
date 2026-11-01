@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
 import { desktopCapturer } from 'electron';
 import { UbuntuDesktop } from './ubuntu-desktop';
-import { executeX11Command, runXdotool } from './xdotool';
+import { executeX11Command, listWindows, runXdotool } from './xdotool';
 
 vi.mock('electron', () => ({
   desktopCapturer: { getSources: vi.fn() },
@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
 vi.mock('./xdotool', () => ({
   getRootGeometry: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
   runXdotool: vi.fn().mockResolvedValue('100'), executeX11Command: vi.fn().mockResolvedValue(undefined),
+  listWindows: vi.fn().mockResolvedValue([{ id: '100', title: 'Terminal' }]),
 }));
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
@@ -60,6 +61,13 @@ describe('desktop observation with floating controls', () => {
     const pending = desktop.capture(new AbortController().signal);
     await vi.advanceTimersByTimeAsync(250);
     await expect(pending).resolves.toMatchObject({ activeWindowId: '100', activeWindowTitle: 'Terminal — dev' });
+  });
+
+  it('lists windows through xdotool for stall recovery', async () => {
+    const main = surface(true);
+    const desktop = new UbuntuDesktop(main as unknown as BrowserWindow);
+    await expect(desktop.listWindows(new AbortController().signal)).resolves.toEqual([{ id: '100', title: 'Terminal' }]);
+    expect(listWindows).toHaveBeenCalledTimes(1);
   });
 
   it('captures without a title when the window name is unavailable', async () => {

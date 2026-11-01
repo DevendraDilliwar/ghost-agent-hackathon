@@ -5,6 +5,8 @@ export interface DesktopPort {
   preflight(signal: AbortSignal): Promise<void>;
   capture(signal: AbortSignal): Promise<ScreenObservation>;
   execute(action: DesktopCommand, observation: ScreenObservation, signal: AbortSignal): Promise<void>;
+  /** Visible windows for stall recovery. Absent in tests and minimal hosts. */
+  listWindows?(signal: AbortSignal): Promise<import('../shared/contracts/desktop').DesktopWindow[]>;
 }
 
 export interface ShellCall {
@@ -65,6 +67,23 @@ export interface PlanDecision {
   }>;
   readonly inputTokens: number;
   readonly outputTokens: number;
+}
+
+/** Local text recognition. Rejects when OCR is unavailable. */
+export interface OcrPort {
+  readText(image: string, signal: AbortSignal): Promise<string>;
+}
+
+/** Durable skill persistence. Load misses yield [] and saves fail silently. */
+export interface SkillStorePort {
+  load(): Promise<unknown>;
+  save(skills: readonly import('./memory/skill-memory').SkillRecord[]): Promise<void>;
+}
+
+/** Durable cross-task memory. Load misses yield [] and saves fail silently. */
+export interface MemoryStorePort {
+  load(): Promise<unknown>;
+  save(records: readonly import('./memory/cross-task-memory').MistakeRecord[]): Promise<void>;
 }
 
 /** Durable mission persistence. Implementations must never throw: load misses

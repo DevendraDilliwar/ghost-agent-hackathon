@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TaskController, compactStepLines } from './task-controller';
+import { SkillMemory } from './memory/skill-memory';
+import { CrossTaskMemory } from './memory/cross-task-memory';
 import { UIGroundingEngine } from './vision/ui-grounding';
 import type { JournalEvent, JournalSink } from '../shared/contracts/journal';
 import type { MissionMeta, PhaseCheckpoint } from '../shared/contracts/mission';
@@ -369,6 +371,46 @@ describe('task lifecycle', () => {
       expect(text).toContain('Earlier steps (1 compacted): 1 executed shell.');
       expect(text).toContain('executed: $ echo 10');
       expect(text).not.toContain('executed: $ echo 0');
+    });
+
+    it('records shell wins and suggests them to later runs', async () => {
+      const skills = new SkillMemory();
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'ok' }));
+      const first = setup({ shell: { run }, skills });
+      first.model.decide.mockResolvedValueOnce(shellDecision('ls inbox')).mockResolvedValueOnce(shellDecision('mkdir -p text')).mockResolvedValue(finished);
+      first.controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(first.controller.getSnapshot().status).toBe('verifying'));
+      expect(skills.serialize()).toHaveLength(1);
+      const second = setup({ shell: { run }, skills });
+      second.controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(second.model.decide).toHaveBeenCalled());
+      const history = (second.model.decide.mock.calls[0]?.[0].history as string[]).join('\n');
+      expect(history).toContain('Skills from past wins');
+      expect(history).toContain('ls inbox');
+    });
+
+    it('loads disk skills on launch and persists new wins', async () => {
+      const diskSkill = { id: 'skill-9', name: '[shared] old win', domain: 'shared',
+        commands: ['df -h /', 'cat disk.txt'], goal: 'Check disk', createdAt: 1 };
+      const save = vi.fn().mockResolvedValue(undefined);
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'ok' }));
+      const { controller, model } = setup({ shell: { run }, skillStore: { load: async () => [diskSkill], save } });
+      model.decide.mockResolvedValueOnce(shellDecision('ls inbox')).mockResolvedValueOnce(shellDecision('mkdir -p text')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      const firstHistory = (model.decide.mock.calls[0]?.[0].history as string[]).join('\n');
+      expect(firstHistory).toContain('df -h /');
+      await vi.waitFor(() => expect(save).toHaveBeenCalled());
+      expect(save.mock.calls[0]?.[0]).toHaveLength(2);
+    });
+
+    it('runs on live learning alone when the disk library is damaged', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'ok' }));
+      const { controller, model } = setup({ shell: { run }, skillStore: { load: async () => { throw new Error('disk gone'); }, save: vi.fn() } });
+      model.decide.mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(model.decide).toHaveBeenCalled();
     });
 
     it('fails cleanly when text-mode actions fall outside the fresh screenshot', async () => {
@@ -813,6 +855,75 @@ describe('task lifecycle', () => {
     expect(model.decide.mock.calls[1]?.[0].history).toContain('Screenshot unchanged since the last observation; decide from the executed steps above.');
     expect(groundScreen).toHaveBeenCalledTimes(1);
     expect(model.decide.mock.calls[1]?.[0].grounding).toBe(detected);
+  });
+
+  it('adds an open-window inventory to stall retries', async () => {
+    const { controller, desktop, model } = setup();
+    Object.assign(desktop, { listWindows: vi.fn().mockResolvedValue([{ id: '100', title: 'Terminal' }, { id: '200', title: 'Untitled - Writer' }]) });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    const retryHistory: string[] = model.decide.mock.calls[1]?.[0].history;
+    expect(retryHistory.join('\n')).toContain('Open windows (2): #100 Terminal | #200 Untitled - Writer');
+  });
+
+  it('remembers escalations and warns later runs in the same domain', async () => {
+    const memory = new CrossTaskMemory();
+    const save = vi.fn().mockResolvedValue(undefined);
+    const store = { load: async () => [], save };
+    const first = setup({ crossTaskMemory: memory, memoryStore: store });
+    first.controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(first.controller.getSnapshot().status).toBe('needs_user'));
+    expect(memory.mistakesFor('shared')).toHaveLength(1);
+    await vi.waitFor(() => expect(save).toHaveBeenCalled());
+    const second = setup({ crossTaskMemory: memory });
+    second.controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(second.model.decide).toHaveBeenCalled());
+    const history = (second.model.decide.mock.calls[0]?.[0].history as string[]).join('\n');
+    expect(history).toContain('Past trouble here:');
+    expect(history).toContain('Stuck on [shared] phase');
+  });
+
+  it('confirms typed text with free OCR before calling the paid judge', async () => {
+    const { controller, model } = setup({ ocr: { readText: async () => 'Invoice Total 25000 due' } });
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '25000' } }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(model.verifyText).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().actions[0]?.verification?.status).toBe('verified_success');
+  });
+
+  it('falls back to the paid judge when OCR misses or is missing', async () => {
+    const { controller, model } = setup({ ocr: { readText: async () => { throw new Error('no binary'); } } });
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '25000' } }).mockResolvedValue(finished);
+    model.verifyText.mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(model.verifyText).toHaveBeenCalledTimes(1);
+  });
+
+  it('walks the UI tree while the step verifies', async () => {
+    const detected = {
+      elements: [{
+        id: 1, type: 'button' as const, label: 'Save',
+        bounds: { x: 100, y: 200, width: 140, height: 36 },
+        center: { x: 170, y: 218 }, confidence: 0.9,
+      }],
+      totalElements: 1, processedAt: 0,
+    };
+    const detectRaw = vi.fn().mockResolvedValue(detected.elements);
+    const seen: unknown[] = [];
+    const groundScreen = async (...args: unknown[]) => {
+      seen.push(args[2]);
+      return detected;
+    };
+    const snapper = new UIGroundingEngine();
+    const { controller, model } = setup({ grounding: { groundScreen, detectRaw, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(detectRaw).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeInstanceOf(Promise);
+    expect(model.decide.mock.calls[0]?.[0].grounding).toBe(detected);
   });
 
   it('tells the model what the last step did before the next decision', async () => {

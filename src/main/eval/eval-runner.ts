@@ -4,9 +4,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TaskController } from '../../agent/task-controller';
+import { SkillMemory } from '../../agent/memory/skill-memory';
 import { UIGroundingEngine } from '../../agent/vision/ui-grounding';
 import { LocalShell } from '../../desktop/linux/local-shell';
 import { createAtspiDetector } from '../../desktop/linux/atspi-reader';
+import { TesseractOcr } from '../../desktop/linux/tesseract-ocr';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
 import { CheckpointStore } from '../../observability/checkpoint-store';
 import { MetaComputerModel } from '../../providers/meta/meta-computer-model';
@@ -46,6 +48,7 @@ interface EvalContext {
   readonly verifyModel: MetaModelId;
   readonly desktop: UbuntuDesktop;
   readonly checkpoints: CheckpointStore;
+  readonly skills: SkillMemory;
 }
 
 class CollectingJournal implements JournalSink {
@@ -88,7 +91,7 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   let finish: (() => void) | null = null;
   const done = new Promise<void>(resolve => { finish = resolve; });
   const controller = new TaskController({
-    checkpoints: ctx.checkpoints, journal, desktop: ctx.desktop, shell: new LocalShell(),
+    checkpoints: ctx.checkpoints, journal, desktop: ctx.desktop, shell: new LocalShell(), skills: ctx.skills, ocr: new TesseractOcr(),
     model: {
       decide: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).decide(input),
       parseIntent: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).parseIntent(input),
@@ -195,7 +198,8 @@ export async function runEvalCli(): Promise<number> {
   const hidden = new BrowserWindow({ show: false, width: 16, height: 16 });
   try {
     const ctx: EvalContext = { root, apiKey, model, verifyModel,
-      desktop: new UbuntuDesktop(hidden, () => []), checkpoints: new CheckpointStore(join(root, 'checkpoints')) };
+      desktop: new UbuntuDesktop(hidden, () => []), checkpoints: new CheckpointStore(join(root, 'checkpoints')),
+      skills: new SkillMemory() };
     const results: EvalResult[] = [];
     for (const task of EVAL_TASKS) {
       console.log('[' + task.id + '] ' + task.name + ' (' + task.kind + ', up to ' + task.maxSteps + ' steps, ' + task.maxMinutes + 'm)');

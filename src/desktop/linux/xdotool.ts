@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { DesktopCommand, ScreenObservation } from '../../shared/contracts/desktop';
+import type { DesktopCommand, DesktopWindow, ScreenObservation } from '../../shared/contracts/desktop';
 
 export function runXdotool(args: string[], signal: AbortSignal, input?: string): Promise<string> {
   signal.throwIfAborted();
@@ -26,6 +26,31 @@ export function runXdotool(args: string[], signal: AbortSignal, input?: string):
     });
     child.stdin.end(input);
   });
+}
+
+/**
+ * Lists visible windows (up to 20) with titles for stall recovery. Windows
+ * whose titles cannot be read are skipped; a failed search yields [].
+ */
+export async function listWindows(signal: AbortSignal): Promise<DesktopWindow[]> {
+  let ids: string[];
+  try {
+    const result = await runXdotool(['search', '--onlyvisible', '--name', '.*'], signal);
+    ids = result.split(/[\s\n]+/).filter(id => /^[0-9]+$/.test(id)).slice(0, 20);
+  } catch {
+    return [];
+  }
+  const windows: DesktopWindow[] = [];
+  for (const id of ids) {
+    try {
+      const title = await runXdotool(['getwindowname', id], signal);
+      const clean = title.trim().slice(0, 120);
+      if (clean) windows.push({ id, title: clean });
+    } catch {
+      // One unreadable window never blocks the inventory.
+    }
+  }
+  return windows;
 }
 
 export async function getRootGeometry(signal: AbortSignal): Promise<{ width: number; height: number }> {
