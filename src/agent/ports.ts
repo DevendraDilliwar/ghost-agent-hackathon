@@ -29,6 +29,27 @@ export interface VerifyDecision {
   readonly outputTokens: number;
 }
 
+export interface PlanDecision {
+  readonly phases: Array<{
+    readonly domain: import('../shared/contracts/mission').DomainId;
+    readonly goal: string;
+    readonly steps: string[];
+    readonly success: string;
+  }>;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
+/** Durable mission persistence. Implementations must never throw: load misses
+ *  yield null/[] and saves fail silently so runs continue without checkpoints. */
+export interface CheckpointPort {
+  saveMission(meta: import('../shared/contracts/mission').MissionMeta): Promise<void>;
+  loadMission(missionId: string): Promise<import('../shared/contracts/mission').MissionMeta | null>;
+  save(checkpoint: import('../shared/contracts/mission').PhaseCheckpoint): Promise<void>;
+  list(missionId: string): Promise<Array<import('../shared/contracts/mission').PhaseCheckpoint>>;
+  listMissions(): Promise<Array<import('../shared/contracts/mission').MissionSummary>>;
+}
+
 export interface ModelPort {
   decide(input: {
     goal: string;
@@ -42,8 +63,17 @@ export interface ModelPort {
     clarifications: string[];
     signal: AbortSignal;
   }): Promise<IntentDecision>;
+  plan(input: {
+    goal: string;
+    signal: AbortSignal;
+  }): Promise<PlanDecision>;
   verifyText(input: {
     text: string;
+    observation: ScreenObservation;
+    signal: AbortSignal;
+  }): Promise<VerifyDecision>;
+  verifySuccess(input: {
+    condition: string;
     observation: ScreenObservation;
     signal: AbortSignal;
   }): Promise<VerifyDecision>;

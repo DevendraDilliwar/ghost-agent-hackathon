@@ -17,6 +17,7 @@ const bridge: DesktopBridge = {
   stopTask: runId => ipcRenderer.invoke(IPC_CHANNELS.stopTask, runId),
   reviewAction: (runId, actionId, approve) => ipcRenderer.invoke(IPC_CHANNELS.reviewAction, runId, actionId, approve),
   confirmCompletion: (runId, verified) => ipcRenderer.invoke(IPC_CHANNELS.confirmCompletion, runId, verified),
+  listMissions: () => ipcRenderer.invoke(IPC_CHANNELS.listMissions),
   onTaskChanged: listener => {
     const handler = (_event: unknown, snapshot: TaskSnapshot) => listener(snapshot);
     ipcRenderer.on(IPC_CHANNELS.taskChanged, handler);

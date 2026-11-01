@@ -31,11 +31,9 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
             </div>
 
             <div
-              className={`max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm ${
-                isUser
-                  ? 'bg-slate-900 text-white font-medium'
-                  : 'border border-slate-200 bg-white text-slate-700'
-              }`}
+              className={isUser
+                ? 'max-w-[85%] rounded-2xl bg-slate-900 p-4 text-sm font-medium leading-relaxed text-white shadow-sm'
+                : 'max-w-[95%] py-1 text-sm leading-relaxed text-slate-800'}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
             </div>

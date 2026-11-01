@@ -1,7 +1,7 @@
-import { Eye, ShieldCheck, Sparkles, Settings2, ExternalLink, Square } from 'lucide-react';
+import { PanelRight, Settings2, ExternalLink, Square, Sparkles } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import type { AgentStatus } from '../../../../shared/contracts/task';
-import { statusLabels } from '../tasks/task-presentation';
+import { statusLabels } from '../run/task-presentation';
 
 interface ChatHeaderProps {
   status: AgentStatus;
@@ -10,73 +10,56 @@ interface ChatHeaderProps {
   settingsDisabled: boolean;
   tokens: number;
   showStop: boolean;
+  workspaceOpen: boolean;
+  onToggleWorkspace: () => void;
   onStop: () => void;
   onOpenSetup: () => void;
   onCompact: () => void;
 }
 
-export function ChatHeader({ status, connected, ready, settingsDisabled, tokens, showStop, onStop, onOpenSetup, onCompact }: ChatHeaderProps) {
+export function ChatHeader({ status, connected, ready, settingsDisabled, tokens, showStop, workspaceOpen, onToggleWorkspace, onStop, onOpenSetup, onCompact }: ChatHeaderProps) {
   const isReady = connected && ready === true;
-  const statusLabel = !connected 
-    ? 'Browser preview mode' 
-    : status === 'idle' 
-      ? (ready === true ? 'Desktop Ready' : 'Setup Required') 
+  const statusLabel = !connected
+    ? 'Browser preview mode'
+    : status === 'idle'
+      ? (ready === true ? 'Desktop Ready' : 'Setup Required')
       : statusLabels[status];
 
   return (
-    <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
-      {/* Brand & Tagline */}
-      <div className="flex items-center gap-3.5">
-        <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 p-[1px] shadow-sm">
-          <div className="flex h-full w-full items-center justify-center rounded-[15px] bg-slate-900">
-            <Sparkles className="h-5 w-5 text-white animate-pulse" />
-          </div>
-          <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center">
-            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${isReady ? 'bg-emerald-400' : 'bg-amber-400'} opacity-75`} />
-            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          </span>
+    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 shadow-sm">
+          <Sparkles className="h-4 w-4 text-white" />
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-extrabold tracking-tight text-slate-900">
-              NoMCP
-            </h1>
-            <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold tracking-wider text-slate-600">
-              UNIVERSAL WORKER
-            </span>
-            <span className="hidden rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-600 sm:inline-block">
-              {statusLabel}
-            </span>
-          </div>
-          <p className="text-[11px] font-medium text-slate-500">
-            Zero per-app APIs · Zero Connectors · <span className="text-emerald-600">Pure Vision</span>
-          </p>
-        </div>
+        <h1 className="shrink-0 text-sm font-extrabold tracking-tight text-slate-900">
+          NoMCP
+        </h1>
+        <span className="hidden rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold tracking-wider text-slate-600 sm:inline-block">
+          UNIVERSAL WORKER
+        </span>
+        <span className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-600 md:inline-flex">
+          <span className={`inline-flex h-1.5 w-1.5 rounded-full ${isReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          {statusLabel}
+        </span>
       </div>
 
-      {/* Agent loop role pills */}
-      <div className="hidden lg:flex items-center gap-2 text-[10px] font-mono">
-        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600" title="Observe: fresh screenshot of the selected desktop before every step">
-          <Eye className="h-3 w-3 text-slate-500" />
-          <span>Observe</span>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600" title="Think: one Meta model parses intent and proposes the next action">
-          <Sparkles className="h-3 w-3 text-slate-500" />
-          <span>Think</span>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700" title="Verify: screen-delta check plus typed-value readback (PRISM)">
-          <ShieldCheck className="h-3 w-3 text-emerald-600" />
-          <span>Verify</span>
-        </div>
-      </div>
-
-      {/* Action Controls */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex shrink-0 items-center gap-2">
         {tokens > 0 && (
-          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[11px] font-medium text-slate-600" title="Tokens used by the current run">
-            {tokens} tokens
+          <span className="hidden rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[11px] font-medium text-slate-600 lg:inline-block" title="Tokens used by the current run">
+            {tokens}
           </span>
         )}
+        <Button
+          type="button"
+          onClick={onToggleWorkspace}
+          aria-pressed={workspaceOpen}
+          title={workspaceOpen ? 'Hide the live workspace panel.' : 'Show the live workspace panel.'}
+          variant="secondary"
+          size="sm"
+        >
+          <PanelRight className="h-3.5 w-3.5 text-slate-400" />
+          <span className="hidden sm:inline">Workspace</span>
+        </Button>
         <Button
           type="button"
           onClick={onOpenSetup}
@@ -87,7 +70,7 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, tokens,
           size="sm"
         >
           <Settings2 className="h-3.5 w-3.5 text-slate-400" />
-          <span>Settings</span>
+          <span className="hidden sm:inline">Settings</span>
         </Button>
         <Button
           type="button"
@@ -97,7 +80,7 @@ export function ChatHeader({ status, connected, ready, settingsDisabled, tokens,
           size="sm"
         >
           <ExternalLink className="h-3.5 w-3.5" />
-          <span>Floating HUD</span>
+          <span className="hidden sm:inline">Floating HUD</span>
         </Button>
         {showStop && (
           <Button

@@ -19,7 +19,7 @@ flowchart TD
     Gate --> Driver[X11 input process]
     Driver --> Desktop[Selected Ubuntu desktop]
     Desktop --> Capture
-    Controller --> Journal[Redacted session journal - planned]
+    Controller --> Journal[Redacted session journal - JSONL per run]
     Controller --> Result[Completion evidence or handoff]
     Result --> UI
 ```
@@ -42,7 +42,7 @@ The first input adapter uses an asynchronous external xdotool process with a tim
 
 ## Logical source layout
 
-These top-level directories exist. Agent and Meta provider modules are implemented in source; persistent observability and live desktop tests remain placeholders. The detailed tree and import rules are in [development](DEVELOPMENT.md).
+These top-level directories exist. Agent, Meta provider, journal, mission-memory, checkpoint, planner and mission-UI modules are implemented in source; live desktop tests remain placeholders. The detailed tree and import rules are in [development](DEVELOPMENT.md).
 
 ```text
 src/
@@ -80,7 +80,7 @@ paused / needs_user -> observing after explicit resume
 completed / stopped / failed -> terminal; a new task gets a new run ID
 ```
 
-The current build requires user review of the final result; marking it incomplete ends the run as failed. A stopped run never resumes or accepts late provider results. The model can request verification/login/clarification handoff through request_user_help, and the user can choose Take control. The needs_user state clears the screenshot, cancels outstanding work, and invalidates approvals. New work stays paused until explicit resume and a fresh screen observation; the five-minute deadline still applies. Reliable live challenge recognition and automatic semantic completion verification remain unverified.
+The current build requires user review of the final result; marking it incomplete ends the run as failed. A stopped run never resumes or accepts late provider results. The model can request verification/login/clarification handoff through request_user_help, and the user can choose Take control. The needs_user state clears the screenshot, cancels outstanding work, and invalidates approvals. New work stays paused until explicit resume and a fresh screen observation; the configurable run deadline (default five minutes) still applies. Reliable live challenge recognition and automatic semantic completion verification remain unverified.
 
 ## Contract requirements
 

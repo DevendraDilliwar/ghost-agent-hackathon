@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { CheckCircle2, Circle, KeyRound, RefreshCw, Shield, Trash2, Check, Lock } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import type { TaskRuntimeView } from '../tasks/useTaskRuntime';
+import type { TaskRuntimeView } from '../run/useTaskRuntime';
 
 export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
   const [key, setKey] = useState('');

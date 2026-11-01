@@ -29,6 +29,8 @@ export function useTaskRuntime() {
     if (mounted.current) { setReadiness(capabilities); setConnection(model); }
   }, [bridge]);
 
+  const listMissions = useCallback(() => bridge?.listMissions() ?? Promise.resolve([]), [bridge]);
+
   useEffect(() => {
     mounted.current = true;
     if (!bridge) return () => { mounted.current = false; };
@@ -94,6 +96,7 @@ export function useTaskRuntime() {
     showControls: () => {
       if (bridge) void bridge.showFloatingControls().catch(failure => { if (mounted.current) setError(message(failure)); });
     },
+    listMissions,
     launch: (configuration: RunConfiguration) => { if (bridge) void command(() => bridge.startTask(configuration)); },
     pause: () => { if (bridge) runCommand(id => bridge.pauseTask(id)); },
     takeOver: () => { if (bridge) runCommand(id => bridge.takeOverTask(id)); },

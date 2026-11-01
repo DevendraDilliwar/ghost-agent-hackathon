@@ -1,6 +1,7 @@
 import type { RunConfiguration, TaskSnapshot } from './task';
 import type { RuntimeReadiness } from './desktop';
 import type { ModelConnectionInfo } from './model';
+import type { MissionSummary } from './mission';
 
 export type DesktopSession = 'x11' | 'wayland' | 'unknown';
 
@@ -26,5 +27,6 @@ export interface DesktopBridge {
   stopTask(runId: string): Promise<TaskSnapshot>;
   reviewAction(runId: string, actionId: string, approve: boolean): Promise<TaskSnapshot>;
   confirmCompletion(runId: string, verified: boolean): Promise<TaskSnapshot>;
+  listMissions(): Promise<MissionSummary[]>;
   onTaskChanged(listener: (snapshot: TaskSnapshot) => void): () => void;
 }

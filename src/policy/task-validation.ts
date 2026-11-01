@@ -25,12 +25,25 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
   if (input.screenConsent !== true || input.isolatedEnvironment !== true) {
     throw new Error('Confirm cloud screen processing and the isolated test environment before starting.');
   }
+  let resume: RunConfiguration['resume'];
+  if (input.resume !== undefined) {
+    if (!input.resume || typeof input.resume !== 'object' || Array.isArray(input.resume)) {
+      throw new Error('Invalid mission resume reference.');
+    }
+    const missionId = (input.resume as Record<string, unknown>).missionId;
+    if (typeof missionId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(missionId)) {
+      throw new Error('Invalid mission resume reference.');
+    }
+    resume = { missionId };
+  }
   return {
     goal: input.goal.trim(),
     approvalMode: (mode === 'ask_approval' ? 'ask_approval' : 'full_access') as RunConfiguration['approvalMode'],
-    maxSteps: integer(input.maxSteps, 1, 30),
+    maxSteps: integer(input.maxSteps, 1, 100),
+    maxMinutes: integer(input.maxMinutes, 1, 60),
     screenConsent: true,
     isolatedEnvironment: true,
+    ...(resume ? { resume } : {}),
   };
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import type { TaskRuntimeView } from '../tasks/useTaskRuntime';
+import type { TaskRuntimeView } from '../run/useTaskRuntime';
 import { ConnectionSetup } from './ConnectionSetup';
 import { Button } from '../../components/ui/button';
 

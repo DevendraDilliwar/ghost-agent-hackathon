@@ -1,5 +1,5 @@
 import { AgentChatView } from '../features/chat/AgentChatView';
-import { useTaskRuntime } from '../features/tasks/useTaskRuntime';
+import { useTaskRuntime } from '../features/run/useTaskRuntime';
 
 export function App() {
   const runtime = useTaskRuntime();

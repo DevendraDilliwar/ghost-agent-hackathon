@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
   stopTask: 'task:stop',
   reviewAction: 'task:review-action',
   confirmCompletion: 'task:confirm-completion',
+  listMissions: 'mission:list',
   taskChanged: 'task:changed',
   controlsSnapshot: 'controls:get-snapshot',
   controlsPause: 'controls:pause',

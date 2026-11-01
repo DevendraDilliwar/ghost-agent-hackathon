@@ -40,6 +40,7 @@ export function registerTaskIpc(window: BrowserWindow, rendererUrl: string, runt
     if (typeof args[1] !== 'boolean') throw new Error('Invalid completion decision.');
     return runtime.controller.confirm(readRunId(args[0]), args[1]);
   });
+  handle(IPC_CHANNELS.listMissions, 0, () => runtime.listMissions());
   return () => {
     for (const channel of channels) ipcMain.removeHandler(channel);
   };

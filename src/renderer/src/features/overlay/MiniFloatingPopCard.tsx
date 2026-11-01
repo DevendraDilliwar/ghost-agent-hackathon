@@ -1,7 +1,7 @@
 import { Sparkles, Maximize2, Pause, Play, Square, GripHorizontal } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import type { ControlsSnapshot } from '../../../../shared/contracts/controls';
-import { isActiveTask, statusLabels } from '../tasks/task-presentation';
+import { isActiveTask, statusLabels } from '../run/task-presentation';
 
 interface MiniFloatingPopCardProps {
   task: ControlsSnapshot | null;

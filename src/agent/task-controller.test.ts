@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TaskController } from './task-controller';
-import type { ModelDecision } from './ports';
+import type { JournalEvent, JournalSink } from '../shared/contracts/journal';
+import type { MissionMeta, PhaseCheckpoint } from '../shared/contracts/mission';
+import type { CheckpointPort, ModelDecision } from './ports';
+
+class StubJournal implements JournalSink {
+  readonly events: JournalEvent[] = [];
+  append(event: JournalEvent): void {
+    this.events.push(event);
+  }
+}
 import type { RunConfiguration } from '../shared/contracts/task';
 import type { ScreenObservation } from '../shared/contracts/desktop';
 
@@ -9,7 +18,7 @@ const frame: ScreenObservation = {
   desktopWidth: 800, desktopHeight: 600, activeWindowId: '100', capturedAt: 1000,
 };
 const configuration: RunConfiguration = {
-  goal: 'Open the test page', maxSteps: 2, approvalMode: 'ask_approval', screenConsent: true, isolatedEnvironment: true,
+  goal: 'Open the test page', maxSteps: 2, maxMinutes: 5, approvalMode: 'ask_approval', screenConsent: true, isolatedEnvironment: true,
 };
 const proposed: ModelDecision = { action: { type: 'click', x: 10, y: 10, button: 'left' }, message: '', warnings: [], inputTokens: 100, outputTokens: 20 };
 const finished: ModelDecision = { action: null, message: 'The task appears complete.', warnings: [], inputTokens: 100, outputTokens: 20 };
@@ -30,6 +39,8 @@ function setup(overrides?: Partial<import('./task-controller').ControllerDepende
   const desktop = { preflight: vi.fn().mockResolvedValue(undefined), capture: vi.fn().mockResolvedValue(frame), execute: vi.fn().mockResolvedValue(undefined) };
   const model = { decide: vi.fn().mockResolvedValue(proposed),
     parseIntent: vi.fn().mockResolvedValue({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 10, outputTokens: 5 }),
+    plan: vi.fn().mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: [], success: 'Goal visibly complete' }], inputTokens: 8, outputTokens: 4 }),
+    verifySuccess: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Success visible.', inputTokens: 5, outputTokens: 2 }),
     verifyText: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 }) };
   const changed = vi.fn();
   const clock = { now: 1000 };
@@ -190,7 +201,18 @@ describe('task lifecycle', () => {
     await flush();
     await vi.advanceTimersByTimeAsync(300_000);
     expect(controller.getSnapshot().status).toBe('failed');
-    expect(controller.getSnapshot().message).toContain('five-minute');
+    expect(controller.getSnapshot().message).toContain('5-minute');
+  });
+
+  it('honours a custom mission time budget', async () => {
+    vi.useFakeTimers();
+    const { controller, model } = setup();
+    model.decide.mockReturnValue(new Promise(() => undefined));
+    controller.start({ ...configuration, maxMinutes: 1 });
+    await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(controller.getSnapshot().status).toBe('failed');
+    expect(controller.getSnapshot().message).toContain('1-minute');
   });
 
   it('keeps revisions increasing across runs and rejects old run identifiers', async () => {
@@ -474,4 +496,222 @@ describe('task lifecycle', () => {
     expect(desktop.execute).toHaveBeenCalledTimes(1);
   });
 
+});
+
+describe('run journal', () => {
+  it('records redacted mission, intent and terminal events', async () => {
+    const journal = new StubJournal();
+    const { controller } = setup({ journal });
+    const run = controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    controller.stop(run.runId!);
+    const stages = journal.events.map(event => event.stage);
+    expect(stages).toContain('mission');
+    expect(stages).toContain('intent');
+    expect(stages).toContain('terminal');
+    for (const event of journal.events) {
+      expect(event.runId).toBe(run.runId);
+      expect(event.summary).not.toContain('data:image');
+    }
+  });
+
+  it('keeps running when the journal sink throws', async () => {
+    const { controller, desktop } = setup({ journal: { append: () => { throw new Error('disk full'); } } });
+    const run = controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    expect(desktop.execute).toHaveBeenCalled();
+    expect(controller.getSnapshot().status).not.toBe('failed');
+    controller.stop(run.runId!);
+  });
+});
+
+describe('mission planning and checkpoints', () => {
+  function stubStore(meta: MissionMeta | null, checkpoints: PhaseCheckpoint[]): CheckpointPort & { saved: PhaseCheckpoint[] } {
+    const saved: PhaseCheckpoint[] = [];
+    return {
+      saved,
+      saveMission: vi.fn().mockResolvedValue(undefined),
+      loadMission: vi.fn().mockResolvedValue(meta),
+      save: vi.fn().mockImplementation((checkpoint: PhaseCheckpoint) => { saved.push(checkpoint); return Promise.resolve(); }),
+      list: vi.fn().mockResolvedValue(checkpoints),
+      listMissions: vi.fn().mockResolvedValue([]),
+    };
+  }
+
+  function savedPhase(overrides?: Partial<PhaseCheckpoint>): PhaseCheckpoint {
+    return {
+      missionId: 'm-1', phaseId: 'phase-1', order: 0, domain: 'github', goal: 'Push code', status: 'done',
+      notes: ['repo: acme/shop'], steps: ['Push'], success: 'Push succeeded',
+      intent: { summary: 'Ship the repo', params: {}, missing: [] },
+      clarifications: [], executedDescs: ['executed: Push to main'], lastVerification: 'PRISM verified',
+      inputTokens: 200, outputTokens: 40, noProgressStreak: 0, savedAt: 1,
+      ...overrides,
+    };
+  }
+
+  it('carries the live mission plan on every snapshot', async () => {
+    const { controller } = setup();
+    expect(controller.getSnapshot().mission).toBeNull();
+    controller.start(configuration);
+    await flush();
+    const mission = controller.getSnapshot().mission;
+    expect(mission?.goal).toBe('Open the test page');
+    expect(mission?.phases.map(phase => [phase.domain, phase.status])).toEqual([['shared', 'active']]);
+  });
+
+  it('plans domain phases after intent and advances when the model stops mid-mission', async () => {
+    const { controller, model } = setup();
+    model.plan.mockResolvedValue({ phases: [
+      { domain: 'github', goal: 'Push code', steps: ['Commit', 'Push'], success: 'Push succeeded' },
+      { domain: 'gcp', goal: 'Deploy backend', steps: [], success: 'Service URL serves traffic' },
+    ], inputTokens: 8, outputTokens: 4 });
+    model.decide.mockResolvedValue(finished);
+    controller.start(configuration);
+    await flush();
+    await flush();
+    await flush();
+    const plan = controller.getMissionPlan();
+    expect(plan?.phases.map(phase => phase.status)).toEqual(['done', 'active']);
+    expect(controller.getSnapshot().status).toBe('verifying');
+    expect(model.decide).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists a step checkpoint with executed history after each verified action', async () => {
+    const store = stubStore(null, []);
+    const { controller } = setup({ checkpoints: store });
+    const run = controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    await flush();
+    expect(store.saveMission).toHaveBeenCalledWith(expect.objectContaining({ missionId: run.runId }));
+    const step = store.saved.at(-1)!;
+    expect(step.phaseId).toBe('phase-1');
+    expect(step.executedDescs).toContain('executed: Click the test target');
+    expect(step.intent?.summary).toBe('Test goal');
+    controller.stop(run.runId!);
+  });
+
+  it('resumes a failed phase with prior history while done phases stay done', async () => {
+    const store = stubStore({ missionId: 'm-1', goal: 'Ship the repo', createdAt: 1 }, [
+      savedPhase({}),
+      savedPhase({ phaseId: 'phase-2', order: 1, domain: 'gcp', goal: 'Deploy backend', status: 'failed',
+        notes: ['FAILED: billing not enabled'], clarifications: ['acme-prod'], executedDescs: ['executed: Open cloud console'],
+        lastVerification: 'PRISM warning: No visual change detected on screen after action.' }),
+    ]);
+    const { controller, model } = setup({ checkpoints: store });
+    const run = controller.start({ ...configuration, resume: { missionId: 'm-1' } });
+    await flush();
+    await flush();
+    expect(controller.getSnapshot().status).not.toBe('failed');
+    expect(controller.getSnapshot().goal).toBe('Ship the repo');
+    expect(controller.getMissionPlan()?.phases.map(phase => phase.status)).toEqual(['done', 'active']);
+    const history: string[] = model.decide.mock.calls[0]![0].history;
+    expect(history).toContain('executed: Open cloud console');
+    expect(history).toContain('User clarification: acme-prod');
+    expect(history).toContain('Last step result: PRISM warning: No visual change detected on screen after action.');
+    expect(history[0]).toBe('Current phase [gcp]: Deploy backend');
+    controller.stop(run.runId!);
+  });
+
+  it('fails honestly when no saved mission exists', async () => {
+    const store = stubStore(null, []);
+    const { controller } = setup({ checkpoints: store });
+    controller.start({ ...configuration, resume: { missionId: 'm-1' } });
+    await flush();
+    expect(controller.getSnapshot().status).toBe('failed');
+    expect(controller.getSnapshot().message).toContain('No saved mission was found');
+  });
+
+  it('refuses to resume an already completed mission', async () => {
+    const store = stubStore({ missionId: 'm-1', goal: 'Ship the repo', createdAt: 1 }, [savedPhase({})]);
+    const { controller } = setup({ checkpoints: store });
+    controller.start({ ...configuration, resume: { missionId: 'm-1' } });
+    await flush();
+    expect(controller.getSnapshot().status).toBe('failed');
+    expect(controller.getSnapshot().message).toContain('already complete');
+  });
+});
+
+describe('self-fix error loop', () => {
+  it('injects focus-first guidance after a stalled shortcut', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'keypress', keys: ['Control', 'a'] } });
+    const run = controller.start(configuration);
+    await flush();
+    controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
+    await flush();
+    await flush();
+    const history: string[] = model.decide.mock.calls[1]![0].history;
+    expect(history.some(entry => entry.includes('Click the target field first'))).toBe(true);
+    expect(controller.getSnapshot().status).not.toBe('needs_user');
+  });
+
+  it('escalates with the full story after two consecutive stalls', async () => {
+    const { controller } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await flush();
+    await flush();
+    await flush();
+    const snapshot = controller.getSnapshot();
+    expect(snapshot.status).toBe('needs_user');
+    expect(snapshot.handoff?.kind).toBe('manual');
+    expect(snapshot.handoff?.reason).toContain('[shared]');
+    expect(snapshot.handoff?.reason).toContain('Attempts: executed:');
+    expect(snapshot.handoff?.reason).toContain('Already tried:');
+    expect(snapshot.handoff?.reason).toContain('Take control of the desktop');
+  });
+
+  it('keeps a stopped phase open until its success condition is confirmed', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Still loading.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValueOnce({ confirmed: true, detail: 'Confirmed now.', inputTokens: 5, outputTokens: 2 });
+    controller.start(configuration);
+    await vi.waitFor(() => expect(model.verifySuccess).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    const retryHistory: string[] = model.decide.mock.calls[1]![0].history;
+    expect(retryHistory.some(entry => entry.includes('Phase success not met (Still loading.)'))).toBe(true);
+    controller.stop(controller.getSnapshot().runId!);
+  });
+
+  it('escalates with a story after repeated unmet success stops', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess.mockResolvedValue({ confirmed: false, detail: 'Blank page.', inputTokens: 5, outputTokens: 2 });
+    controller.start(configuration);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    const handoff = controller.getSnapshot().handoff;
+    expect(handoff?.kind).toBe('manual');
+    expect(handoff?.reason).toContain('Phase success not met: Blank page.');
+    expect(handoff?.reason).toContain('Take control of the desktop');
+  });
+
+  it('skips the success check for phases without a success condition', async () => {
+    const { controller, model } = setup();
+    model.plan.mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: [], success: '' }], inputTokens: 8, outputTokens: 4 });
+    model.decide.mockResolvedValue(finished);
+    controller.start(configuration);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(model.verifySuccess).not.toHaveBeenCalled();
+    controller.stop(controller.getSnapshot().runId!);
+  });
+
+  it('clears recovery guidance after verified progress', async () => {
+    const { controller, desktop, model } = setup();
+    // Sequenced before start (no races): observe, stall, then a changed screen.
+    desktop.capture
+      .mockResolvedValueOnce(frame)
+      .mockResolvedValueOnce(frame)
+      .mockResolvedValueOnce({ ...frame, image: 'data:image/png;base64,changed-screen-pixels-0123456789' });
+    const run = controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 6 });
+    await vi.waitFor(() => expect(model.decide.mock.calls.length).toBeGreaterThanOrEqual(3));
+    controller.stop(run.runId!);
+    // First action stalls (same frame), guidance injected for the retry.
+    const retryHistory: string[] = model.decide.mock.calls[1]![0].history;
+    expect(retryHistory.some(entry => entry.includes('caused no visible change'))).toBe(true);
+    // Fresh screen counts as progress: guidance cleared, streak reset.
+    const recoveredHistory: string[] = model.decide.mock.calls[2]![0].history;
+    expect(recoveredHistory.some(entry => entry.includes('Do not repeat'))).toBe(false);
+    expect(recoveredHistory.some(entry => entry.includes('PRISM verified'))).toBe(true);
+  });
 });

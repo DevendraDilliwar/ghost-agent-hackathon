@@ -51,8 +51,11 @@ export interface RunConfiguration {
   goal: string;
   approvalMode: ApprovalMode;
   maxSteps: number;
+  maxMinutes: number;
   screenConsent: boolean;
   isolatedEnvironment: boolean;
+  /** Resume a saved mission under a new run instead of starting fresh. */
+  resume?: { missionId: string };
 }
 
 export interface UserHandoff {
@@ -72,6 +75,7 @@ export interface TaskSnapshot {
   status: AgentStatus;
   goal: string;
   maxSteps: number;
+  maxMinutes: number;
   actions: AgentAction[];
   messages: ChatMessage[];
   screenshot: string | null;
@@ -82,5 +86,6 @@ export interface TaskSnapshot {
   inputTokens: number;
   outputTokens: number;
   intent: ParsedIntent | null;
+  mission: import('./mission').MissionPlan | null;
   groundedElements?: import('./grounding').GroundedElement[];
 }

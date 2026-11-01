@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { globalShortcut } from 'electron';
+import { app, globalShortcut } from 'electron';
 import type { BrowserWindow } from 'electron';
+import { join } from 'node:path';
+import os from 'node:os';
+import { FileJournal } from '../../observability/journal';
+import { CheckpointStore } from '../../observability/checkpoint-store';
+import type { MissionSummary } from '../../shared/contracts/mission';
 import { TaskController } from '../../agent/task-controller';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
 import { MetaComputerModel } from '../../providers/meta/meta-computer-model';
@@ -20,6 +25,23 @@ const emergencyShortcuts = [
 ] as const;
 const shortcutUnavailable = 'No emergency Stop shortcut is available. Another app or the desktop may be using these keys. Free one of ' +
   emergencyShortcuts.map(shortcut => shortcut.label).join(', ') + ' in your desktop keyboard settings, then choose Recheck desktop.';
+
+function journalDirectory(): string {
+  try {
+    return join(app.getPath('userData'), 'nomcp-journal');
+  } catch {
+    // In the test runner app.getPath is unavailable; journal to temp instead.
+    return join(os.tmpdir(), 'nomcp-journal');
+  }
+}
+
+function missionsDirectory(): string {
+  try {
+    return join(app.getPath('userData'), 'nomcp-missions');
+  } catch {
+    return join(os.tmpdir(), 'nomcp-missions');
+  }
+}
 
 export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow) {
   const apiKey = process.env.META_API_KEY?.trim() ?? '';
@@ -60,11 +82,17 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   const desktop = new UbuntuDesktop(window, () => [controls]);
   let shortcut: typeof emergencyShortcuts[number] | null = null;
   let disposed = false;
+  const journal = new FileJournal(journalDirectory());
+  const checkpoints = new CheckpointStore(missionsDirectory());
   const controller = new TaskController({
+    checkpoints,
+    journal,
     desktop,
     model: {
       decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input),
       parseIntent: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).parseIntent(input),
+      plan: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).plan(input),
+      verifySuccess: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifySuccess(input),
       verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifyText(input),
     },
     id: randomUUID,
@@ -104,6 +132,9 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
       if (!connection.info().verified) throw new Error('Test your Meta connection in Settings before starting.');
       if (!ensureEmergencyStop()) throw new Error(shortcutUnavailable);
       return controller.start(configuration);
+    },
+    listMissions(): Promise<MissionSummary[]> {
+      return checkpoints.listMissions();
     },
     async testConnection(candidate: unknown) {
       if (!['idle', 'completed', 'stopped', 'failed'].includes(controller.getSnapshot().status)) throw new Error('Stop the current task before changing the model connection.');

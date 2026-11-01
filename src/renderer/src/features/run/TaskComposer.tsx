@@ -14,6 +14,7 @@ interface TaskComposerProps {
   screenConsent: boolean;
   isolatedEnvironment: boolean;
   maxSteps: number;
+  maxMinutes: number;
   onOpenSetup: () => void;
   onLaunch: (configuration: RunConfiguration) => void;
 }
@@ -65,6 +66,7 @@ export function TaskComposer({
   screenConsent,
   isolatedEnvironment,
   maxSteps,
+  maxMinutes,
   onOpenSetup,
   onLaunch,
 }: TaskComposerProps) {
@@ -153,7 +155,7 @@ export function TaskComposer({
     event?.preventDefault();
     if (!canSubmit) return;
     if (!modelReady) { onOpenSetup(); return; }
-    onLaunch({ goal: goal.trim(), maxSteps, approvalMode, screenConsent, isolatedEnvironment });
+    onLaunch({ goal: goal.trim(), maxSteps, maxMinutes, approvalMode, screenConsent, isolatedEnvironment });
   }
 
   function keyDown(event: KeyboardEvent<HTMLTextAreaElement>) {

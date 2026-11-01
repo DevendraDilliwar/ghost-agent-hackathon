@@ -159,4 +159,34 @@ describe('Meta computer-use adapter', () => {
     expect(result).toMatchObject({ confirmed: true, inputTokens: 60, outputTokens: 12 });
   });
 
+  it('plans ordered domain phases without tools or screenshots', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 45, output_tokens: 18 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"phases":[{"domain":"github","goal":"Push code","success":"Push succeeded"},{"domain":"gcp","goal":"Deploy backend","steps":["Create the service","Deploy"],"success":"Service URL serves traffic"}]}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const result = await model.plan({ goal: 'Ship the repo', signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.tools).toBeUndefined();
+    expect(String(request.mock.calls[0]![1]?.body)).not.toContain('data:image');
+    expect(result.phases).toEqual([
+      { domain: 'github', goal: 'Push code', steps: [], success: 'Push succeeded' },
+      { domain: 'gcp', goal: 'Deploy backend', steps: ['Create the service', 'Deploy'], success: 'Service URL serves traffic' },
+    ]);
+    expect(result).toMatchObject({ inputTokens: 45, outputTokens: 18 });
+  });
+
+  it('verifies phase success conditions against a screenshot without tools', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 55, output_tokens: 9 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"confirmed":false,"detail":"Still on the loading screen."}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3', verifyModel: 'muse-wonder-1.0' }, request);
+    const result = await model.verifySuccess({ condition: 'Deployment URL is live', observation: frame, signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.model).toBe('muse-wonder-1.0');
+    expect(body.tools).toBeUndefined();
+    expect(result).toMatchObject({ confirmed: false, detail: 'Still on the loading screen.', inputTokens: 55, outputTokens: 9 });
+  });
+
 });

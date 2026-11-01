@@ -43,8 +43,24 @@ describe('task and setup IPC boundary', () => {
   it('does not start a task if prerequisites are not ready', async () => {
     const { handlers, event, start } = setup(false);
     await expect(handlers.get(IPC_CHANNELS.startTask)!(event, {
-      goal: 'Open the text editor', maxSteps: 5, approvalMode: 'ask_approval', screenConsent: true, isolatedEnvironment: true,
+      goal: 'Open the text editor', maxSteps: 5, maxMinutes: 5, approvalMode: 'ask_approval', screenConsent: true, isolatedEnvironment: true,
     })).rejects.toThrow('Fix desktop setup');
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it('lists saved missions only for the trusted task window', async () => {
+    const missions = [{ missionId: 'm-1', goal: 'Ship it', createdAt: 1, updatedAt: 2, phases: [] }];
+    const frame = { url: 'file:///app/index.html' };
+    const contents = { mainFrame: frame };
+    const window = { isDestroyed: () => false, webContents: contents } as unknown as BrowserWindow;
+    const listMissions = vi.fn().mockResolvedValue(missions);
+    const runtime = { listMissions } as unknown as TaskRuntime;
+    registerTaskIpc(window, frame.url, runtime, async () => undefined);
+    const handlers = new Map(vi.mocked(ipcMain.handle).mock.calls.map(([channel, handler]) => [channel, handler]));
+    const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent;
+    const list = handlers.get(IPC_CHANNELS.listMissions)!;
+    await expect(list(event)).resolves.toEqual(missions);
+    expect(() => list({ ...event, sender: {} } as IpcMainInvokeEvent)).toThrow('Rejected');
+    expect(() => list(event, 'extra')).toThrow('Rejected');
   });
 });

@@ -1,6 +1,7 @@
 import type { ModelPort } from '../../agent/ports';
 import { parseMetaDecision } from './parse-response';
 import { parseIntentResponse } from './parse-intent';
+import { parsePlanResponse } from './parse-plan';
 import { parseVerifyResponse } from './parse-verify';
 import { requestMeta } from './meta-request';
 import type { MetaConfiguration } from './meta-request';
@@ -26,6 +27,22 @@ const intentInstructions = [
   'Put every concrete value stated in the goal into params, such as dates, names, amounts, and file names.',
   'Put every value the goal needs but does not state into missing. Never invent values.',
   'Use at most 20 params and 20 missing names. Keep the summary under 500 characters and each value under 200 characters.',
+].join(' ');
+
+const planInstructions = [
+  'You split a desktop-task goal into ordered domain phases. Reply with exactly one JSON object and nothing else: no markdown, no code fences, no explanation.',
+  'Schema: {"phases": [{"domain": "short-system-label", "goal": "one-domain outcome", "steps": ["first thing to do", "..."], "success": "visible evidence the phase is done"}]}.',
+  'You choose the domain labels yourself: one short lowercase label per system the goal touches (github, aws, tally, terminal, browser, or anything else the task needs), in execution order. Never force a task into an unrelated label.',
+  'A simple single-system task gets exactly one phase with domain shared.',
+  'Each phase goal states the outcome in that system. List up to 12 concrete steps in execution order (omit steps only for a trivial single-action phase). Every phase needs a success condition: the visible evidence on screen that proves it is done (a URL, a confirmation message, a visible state). Use 1 to 8 phases and keep each goal under 500 characters.',
+].join(' ');
+
+const successInstructions = [
+  'You verify whether a phase success condition is met on a desktop screenshot. Reply with exactly one JSON object and nothing else: no markdown, no code fences, no explanation.',
+  'Schema: {"confirmed": true or false, "detail": "one short sentence"}.',
+  'Set confirmed true only if the screen clearly shows the expected evidence: the named URL, confirmation message, or visible state. A loading spinner, error dialog, or blank page means not confirmed.',
+  'If an error dialog or blocking pop-up is visible, say so in detail.',
+  'Keep detail under 500 characters.',
 ].join(' ');
 
 const verifyInstructions = [
@@ -74,6 +91,28 @@ export class MetaComputerModel implements ModelPort {
       ] }],
     }, input.signal, this.request);
     return parseIntentResponse(response);
+  }
+
+  async plan(input: Parameters<ModelPort['plan']>[0]) {
+    const response = await requestMeta(this.config, {
+      max_output_tokens: 1024, reasoning: { effort: 'low' }, instructions: planInstructions,
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: 'Goal: ' + input.goal + '\nReturn only the JSON object.' },
+      ] }],
+    }, input.signal, this.request);
+    return parsePlanResponse(response);
+  }
+
+  async verifySuccess(input: Parameters<ModelPort['verifySuccess']>[0]) {
+    const config = { apiKey: this.config.apiKey, model: this.config.verifyModel ?? this.config.model };
+    const response = await requestMeta(config, {
+      max_output_tokens: 512, reasoning: { effort: 'low' }, instructions: successInstructions,
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: 'Success condition: ' + input.condition + '\nIs this condition met on the screenshot? Return only the JSON object.' },
+        { type: 'input_image', image_url: input.observation.image },
+      ] }],
+    }, input.signal, this.request);
+    return parseVerifyResponse(response);
   }
 
   async verifyText(input: Parameters<ModelPort['verifyText']>[0]) {
