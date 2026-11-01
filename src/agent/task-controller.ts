@@ -1,5 +1,5 @@
 import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
-import type { CheckpointPort, DesktopPort, ModelDecision, ModelPort, ShellPort, VerifyDecision } from './ports';
+import type { CheckpointPort, DesktopPort, ModelDecision, ModelPort, PlanDecision, ShellPort, VerifyDecision } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
@@ -93,6 +93,7 @@ export class TaskController {
   private clarifications: string[] = [];
   private noProgressStreak = 0;
   private malformedStreak = 0;
+  private replanCount = 0;
   private lastSentFrame: string | null = null;
   private lastGrounding: { image: string; result: GroundingResult } | null = null;
   /** Consecutive stall handoffs without progress. Survives resume so a stuck run fails instead of looping forever. */
@@ -140,6 +141,7 @@ export class TaskController {
     this.unmetNote = null;
     this.lastSentFrame = null;
     this.lastGrounding = null;
+    this.replanCount = 0;
     this.approvalMode = configuration.approvalMode ?? 'full_access';
     const runId = this.dependencies.id();
     if (configuration.resume) {
@@ -982,6 +984,8 @@ export class TaskController {
     }
     this.record('verify', 'failure', 'Phase success not met: ' + check.detail);
     if (++this.unmetStreak >= 2) {
+      if (this.replanCount < 2 && (await this.replanPhase(phase, check.detail, signal, generation))) return false;
+      if (!this.current(generation, signal)) return false;
       const recovery = this.dependencies.recovery ?? defaultErrorLoop;
       const reason = recovery.story({
         phase: this.phaseContext(),
@@ -998,6 +1002,57 @@ export class TaskController {
     this.update({ status: 'observing', message: 'Phase success not confirmed. Continuing the phase from a fresh screen observation.' });
     this.launch();
     return false;
+  }
+
+  /**
+   * Replans the remaining work after a phase fails twice. True when the run
+   * continues under a fresh plan (or already settled); false hands the
+   * caller back to user escalation.
+   */
+  private async replanPhase(phase: PhaseRecord, detail: string, signal: AbortSignal, generation: number): Promise<boolean> {
+    const mission = this.mission;
+    if (!mission || !this.current(generation, signal)) return true;
+    this.update({ status: 'preparing', message: 'The phase failed twice. Replanning the remaining work.' });
+    const attempts = this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
+      .slice(-3).map(action => action.status + ': ' + action.description);
+    const done = mission.getPlan().phases.filter(item => item.status === 'done').map(item => '[' + item.domain + '] ' + item.goal);
+    const context = 'Original goal: ' + this.state.goal.slice(0, 500) +
+      '. Failed phase [' + phase.domain + ']: ' + phase.goal.slice(0, 300) +
+      '. Recent attempts: ' + (attempts.join(' | ').slice(0, 600) || 'none') +
+      '. Judge: ' + detail.slice(0, 300) +
+      (done.length ? '. Already done: ' + done.join(' | ').slice(0, 500) : '');
+    let decision: PlanDecision;
+    try {
+      decision = await this.dependencies.model.plan({ goal: this.state.goal, context, signal });
+    } catch {
+      return false;
+    }
+    if (!this.current(generation, signal)) return true;
+    const inputTokens = this.state.inputTokens + decision.inputTokens;
+    const outputTokens = this.state.outputTokens + decision.outputTokens;
+    this.state = { ...this.state, inputTokens, outputTokens };
+    if (inputTokens > this.tokenBudget().input || outputTokens > this.tokenBudget().output) {
+      this.fail('The run token allowance was reached. No further actions will be dispatched.');
+      return true;
+    }
+    try {
+      const failed = mission.failPhase(phase.phaseId, 'Success unmet twice: ' + detail.slice(0, 200));
+      this.persistPhase(failed);
+      const first = mission.replanRemaining(decision.phases);
+      mission.startPhase(first.phaseId);
+      this.persistPhase();
+    } catch {
+      return false;
+    }
+    this.replanCount += 1;
+    this.unmetStreak = 0;
+    this.noProgressStreak = 0;
+    this.stallCycles = 0;
+    this.lastGuidance = null;
+    this.record('mission', 'info', 'Replanned after failure: ' + decision.phases.length + ' fresh phase(s).');
+    this.update({ status: 'observing', message: 'Fresh plan ready. Continuing from a new screen observation.' });
+    this.launch();
+    return true;
   }
 
   /** Completes the active phase and starts the next one. False when the mission itself is done. */

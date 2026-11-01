@@ -148,6 +148,35 @@ export class MissionMemory {
     return this.store({ ...phase, status: 'failed', notes, finishedAt: this.now() });
   }
 
+  /**
+   * Replace stale pending phases with a fresh plan. The caller fails the
+   * active phase first. Completed and failed phases stay as history; every
+   * new phase is validated before anything is dropped.
+   */
+  replanRemaining(phases: Array<{ domain: DomainId; goal: string; steps: string[]; success: string }>): PhaseRecord {
+    if (!phases.length) throw new Error('The replan came back empty.');
+    for (const phase of phases) {
+      if (!isDomainId(phase.domain)) throw new Error('Invalid mission domain.');
+      bounded(phase.goal, maxPhaseGoal, 'phase goal');
+      checkSteps(phase.steps);
+      checkSuccess(phase.success);
+    }
+    for (const phase of this.phases.values()) {
+      if (phase.status === 'active') throw new Error('Finish the active phase before replanning.');
+    }
+    const settled = [...this.phases.values()].filter(phase => phase.status !== 'pending').length;
+    if (settled + phases.length > maxPhases) throw new Error('Too many mission phases.');
+    for (const [phaseId, phase] of this.phases) {
+      if (phase.status === 'pending') this.phases.delete(phaseId);
+    }
+    let first: PhaseRecord | null = null;
+    for (const phase of phases) {
+      const record = this.addPhase(phase.domain, phase.goal, { steps: phase.steps, success: phase.success });
+      first ??= record;
+    }
+    return first!;
+  }
+
   /** Resume path: a failed phase becomes active again, keeping its history. */
   reactivatePhase(phaseId: string): PhaseRecord {
     const phase = this.require(phaseId);

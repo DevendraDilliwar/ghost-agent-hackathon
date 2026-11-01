@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import { ArrowUp, ChevronDown, Mic, MicOff, Plus, Sparkles, X } from 'lucide-react';
 import type { ApprovalMode, RunConfiguration } from '../../../../shared/contracts/task';
+import { BUDGET_PRESETS, matchBudgetPreset } from './task-presentation';
 
 interface TaskComposerProps {
   displayName?: string;
@@ -17,6 +18,7 @@ interface TaskComposerProps {
   maxMinutes: number;
   onOpenSetup: () => void;
   onLaunch: (configuration: RunConfiguration) => void;
+  onBudgetChange: (maxSteps: number, maxMinutes: number) => void;
 }
 
 // Web Speech API Types
@@ -70,6 +72,7 @@ export function TaskComposer({
   maxMinutes,
   onOpenSetup,
   onLaunch,
+  onBudgetChange,
 }: TaskComposerProps) {
   const [goal, setGoal] = useState(initialGoal);
   const [isListening, setIsListening] = useState(false);
@@ -179,6 +182,20 @@ export function TaskComposer({
           <button type="button" onClick={() => setVoiceLang(voiceLang === 'hi-IN' ? 'en-US' : 'hi-IN')}>Voice language: {voiceLang === 'hi-IN' ? 'Hindi' : 'English'}<ChevronDown size={14} /></button>
         </div>
       )}
+      <div className="composer-budget" role="group" aria-label="Task budget">
+        <span className="composer-budget-label">Budget</span>
+        {BUDGET_PRESETS.map(preset => {
+          const active = matchBudgetPreset(maxSteps, maxMinutes) === preset.id;
+          return (
+            <button key={preset.id} type="button" title={preset.hint}
+              aria-pressed={active} aria-label={preset.label + ' budget: ' + preset.hint}
+              className={`composer-budget-option${active ? ' is-active' : ''}`}
+              disabled={busy} onClick={() => onBudgetChange(preset.maxSteps, preset.maxMinutes)}>
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
       <div className={`composer-capsule ${isListening ? 'is-listening' : ''}`}>
         <button type="button" className="chat-icon-button composer-plus" disabled={busy} aria-label="Open task suggestions" aria-expanded={showPrompts} onClick={() => setShowPrompts(value => !value)}><Plus /></button>
         <textarea

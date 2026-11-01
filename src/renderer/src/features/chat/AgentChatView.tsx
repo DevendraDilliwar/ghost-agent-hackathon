@@ -161,7 +161,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
         <footer className="chat-composer-footer">
           <div className="chat-composer-inner">
             {active ? <RunControls status={status} disabled={runtime.pending} emergencyStopShortcut={runtime.readiness?.emergencyStopShortcut ?? null} onPause={runtime.pause} onResume={runtime.resume} onTakeOver={runtime.takeOver} onStop={runtime.stop} /> : (
-              <TaskComposer displayName="Ghost Agent" key={`${task?.runId ?? 'new'}-${draftVersion}`} initialGoal="" approvalMode={approvalMode} screenConsent={screenConsent} isolatedEnvironment={isolatedEnvironment} maxSteps={maxSteps} maxMinutes={maxMinutes} busy={runtime.pending} connected={runtime.connected} modelReady={modelReady} ready={ready} onOpenSetup={openSetup} onLaunch={launch} />
+              <TaskComposer displayName="Ghost Agent" key={`${task?.runId ?? 'new'}-${draftVersion}`} initialGoal="" approvalMode={approvalMode} screenConsent={screenConsent} isolatedEnvironment={isolatedEnvironment} maxSteps={maxSteps} maxMinutes={maxMinutes} busy={runtime.pending} connected={runtime.connected} modelReady={modelReady} ready={ready} onOpenSetup={openSetup} onLaunch={launch} onBudgetChange={(steps, minutes) => { setMaxSteps(steps); setMaxMinutes(minutes); }} />
             )}
           </div>
         </footer>

@@ -32,3 +32,24 @@ export const statusLabels: Record<AgentStatus, string> = {
 export function isActiveTask(status: AgentStatus): boolean {
   return !['idle', 'completed', 'stopped', 'failed'].includes(status);
 }
+
+export type BudgetPresetId = 'small' | 'large' | 'max';
+
+export interface BudgetPreset {
+  readonly id: BudgetPresetId;
+  readonly label: string;
+  readonly hint: string;
+  readonly maxSteps: number;
+  readonly maxMinutes: number;
+}
+
+export const BUDGET_PRESETS: readonly BudgetPreset[] = [
+  { id: 'small', label: 'Small', hint: '10 steps · 3 min', maxSteps: 10, maxMinutes: 3 },
+  { id: 'large', label: 'Large', hint: '25 steps · 8 min', maxSteps: 25, maxMinutes: 8 },
+  { id: 'max', label: 'Max', hint: '60 steps · 20 min', maxSteps: 60, maxMinutes: 20 },
+];
+
+/** Matches custom slider values back to a preset, or null when bespoke. */
+export function matchBudgetPreset(maxSteps: number, maxMinutes: number): BudgetPresetId | null {
+  return BUDGET_PRESETS.find(preset => preset.maxSteps === maxSteps && preset.maxMinutes === maxMinutes)?.id ?? null;
+}

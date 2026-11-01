@@ -164,3 +164,34 @@ describe('step progress', () => {
     expect(() => MissionMemory.restore(bad('done', null))).toThrow('Invalid mission step progress');
   });
 });
+
+describe('mission replan', () => {
+  it('replaces stale pending phases and keeps settled history', () => {
+    const { memory, github, gcp, vercel } = setup();
+    memory.startPhase(github.phaseId);
+    memory.completePhase(github.phaseId, 'pushed');
+    memory.startPhase(gcp.phaseId);
+    memory.failPhase(gcp.phaseId, 'billing stuck');
+    const first = memory.replanRemaining([{ domain: 'gcp', goal: 'Retry deploy', steps: ['Enable billing'], success: 'Service URL serves traffic' }]);
+    const plan = memory.getPlan();
+    expect(plan.phases.map(phase => phase.phaseId)).not.toContain(vercel.phaseId);
+    expect(plan.phases.find(phase => phase.phaseId === github.phaseId)?.status).toBe('done');
+    expect(plan.phases.find(phase => phase.phaseId === gcp.phaseId)?.status).toBe('failed');
+    expect(first).toMatchObject({ status: 'pending', goal: 'Retry deploy' });
+    memory.startPhase(first.phaseId);
+    expect(memory.currentPhase()?.phaseId).toBe(first.phaseId);
+  });
+
+  it('validates the whole replan before dropping anything', () => {
+    const { memory, vercel } = setup();
+    expect(() => memory.replanRemaining([])).toThrow('came back empty');
+    expect(() => memory.replanRemaining([{ domain: 'bogus app!', goal: 'Retry', steps: [], success: '' }])).toThrow('Invalid mission domain');
+    expect(memory.getPlan().phases.find(phase => phase.phaseId === vercel.phaseId)?.status).toBe('pending');
+  });
+
+  it('refuses to replan while a phase is still active', () => {
+    const { memory, github } = setup();
+    memory.startPhase(github.phaseId);
+    expect(() => memory.replanRemaining([{ domain: 'gcp', goal: 'Retry', steps: [], success: '' }])).toThrow('Finish the active phase');
+  });
+});

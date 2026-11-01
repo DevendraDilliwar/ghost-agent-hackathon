@@ -99,6 +99,8 @@ export interface ModelPort {
   }): Promise<IntentDecision>;
   plan(input: {
     goal: string;
+    /** Replan context: failures and remaining work. Absent for the first plan. */
+    context?: string;
     signal: AbortSignal;
   }): Promise<PlanDecision>;
   verifyText(input: {

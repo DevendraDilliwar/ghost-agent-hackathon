@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -9,8 +9,8 @@ function freshRoot(): string {
 }
 
 describe('eval tasks', () => {
-  it('declares five bounded benchmark tasks', () => {
-    expect(EVAL_TASKS.map(task => task.id)).toEqual(['T1', 'T2', 'T3', 'T4', 'T5']);
+  it('declares six bounded benchmark tasks', () => {
+    expect(EVAL_TASKS.map(task => task.id)).toEqual(['T1', 'T2', 'T3', 'T4', 'T5', 'T6']);
     for (const task of EVAL_TASKS) {
       expect(task.maxSteps).toBeLessThanOrEqual(25);
       expect(task.maxMinutes).toBeLessThanOrEqual(8);
@@ -77,6 +77,21 @@ describe('eval tasks', () => {
     const wrong = EVAL_TASKS[1]!.verify(root, { readOdtEntry: (_file: string, entry: string) => entry === 'content.xml' ? xml : 'application/zip' });
     expect(wrong.pass).toBe(false);
     expect(wrong.detail).toContain('fabricated');
+  });
+
+  it('passes T6 after simulated sorting and rejects a wrong manifest', () => {
+    const root = freshRoot();
+    const task = EVAL_TASKS[5]!;
+    task.setup(root);
+    for (const dir of ['txt', 'csv', 'log']) mkdirSync(join(root, 't6', dir), { recursive: true });
+    for (const file of readdirSync(join(root, 't6', 'inbox'))) {
+      const ext = file.endsWith('.txt') ? 'txt' : file.endsWith('.csv') ? 'csv' : 'log';
+      renameSync(join(root, 't6', 'inbox', file), join(root, 't6', ext, file));
+    }
+    writeFileSync(join(root, 't6', 'manifest.txt'), 'txt: 6\ncsv: 3\nlog: 3\n');
+    expect(task.verify(root)).toMatchObject({ pass: true });
+    writeFileSync(join(root, 't6', 'manifest.txt'), 'txt: 5\ncsv: 3\nlog: 3\n');
+    expect(task.verify(root).pass).toBe(false);
   });
 
   it('readOdtText returns null for missing files', () => {

@@ -129,7 +129,9 @@ export class MetaComputerModel implements ModelPort {
       // Same allowance as decisions: multi-phase goals need room for reasoning plus the JSON.
       max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: planInstructions,
       input: [{ role: 'user', content: [
-        { type: 'input_text', text: 'Goal: ' + input.goal + '\nReturn only the JSON object.' },
+        { type: 'input_text', text: 'Goal: ' + input.goal +
+          (input.context ? '\nReplan context (plan ONLY the remaining work): ' + input.context.slice(0, 2000) : '') +
+          '\nReturn only the JSON object.' },
       ] }],
     }, input.signal, this.request);
     return parsePlanResponse(response);

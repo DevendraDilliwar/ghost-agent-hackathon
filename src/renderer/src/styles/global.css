@@ -211,6 +211,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .composer-menu > button { display: flex; align-items: center; justify-content: space-between; text-align: left; width: 100%; border-radius: 10px; padding: 12px 10px; font-size: 13px; }
 .composer-menu > button:hover { background: #363636; }
 .composer-feedback { font-size: 12px; color: #e9c68f; padding: 8px 14px 0; }
+.composer-budget { display: flex; align-items: center; gap: 6px; padding: 0 14px 8px; }
+.composer-budget-label { font-size: 11px; color: #8e8e93; margin-right: 2px; }
+.composer-budget-option { font-size: 11px; line-height: 1; color: #bcbfc3; background: #252525; border: 1px solid transparent; border-radius: 999px; padding: 6px 11px; }
+.composer-budget-option:hover:not(:disabled) { background: #363636; color: #e3e3e3; }
+.composer-budget-option.is-active { color: #173052; background: #a8c7fa; border-color: #a8c7fa; }
+.composer-budget-option:disabled { opacity: 0.5; }
 .voice-active { color: #a8c7fa; background: #354051; }
 .message-feed { display: flex; flex-direction: column; gap: 42px; padding: 18px 0; }
 .chat-message { display: flex; flex-direction: column; min-width: 0; }

@@ -293,6 +293,18 @@ describe('Meta computer-use adapter', () => {
     expect(result).toMatchObject({ inputTokens: 45, outputTokens: 18 });
   });
 
+  it('sends replan context so the model plans only remaining work', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 45, output_tokens: 18 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"phases":[{"domain":"gcp","goal":"Retry deploy","success":"Up"}]}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const result = await model.plan({ goal: 'Ship the repo', context: 'Judge: Blank page.', signal: new AbortController().signal });
+    expect(String(request.mock.calls[0]![1]?.body)).toContain('Replan context');
+    expect(String(request.mock.calls[0]![1]?.body)).toContain('Judge: Blank page.');
+    expect(result.phases).toEqual([{ domain: 'gcp', goal: 'Retry deploy', steps: [], success: 'Up' }]);
+  });
+
   it('verifies phase success conditions against a screenshot without tools', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       status: 'completed', usage: { input_tokens: 55, output_tokens: 9 },

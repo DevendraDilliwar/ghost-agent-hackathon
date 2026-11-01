@@ -1117,6 +1117,30 @@ describe('self-fix error loop', () => {
     expect(handoff?.reason).toContain('Take control of the desktop');
   });
 
+  it('replans remaining work after two unmet stops and continues', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Still loading.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Still loading.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(model.plan).toHaveBeenCalledTimes(2);
+    expect(model.plan.mock.calls[1]?.[0].context).toContain('Judge: Still loading.');
+    const phases = controller.getMissionPlan()?.phases ?? [];
+    expect(phases.map(phase => phase.status)).toEqual(['failed', 'active']);
+  });
+
+  it('escalates after two replans without progress', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess.mockResolvedValue({ confirmed: false, detail: 'Blank page.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(model.plan).toHaveBeenCalledTimes(3);
+    expect(controller.getSnapshot().handoff?.reason).toContain('Phase success not met: Blank page.');
+  });
+
   it('fails the run after repeated unmet-success handoffs without progress', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue(finished);

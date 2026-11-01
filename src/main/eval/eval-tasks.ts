@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface EvalVerdict {
@@ -127,4 +127,36 @@ const calcSum: EvalTask = {
   verify: (root, deps) => odtVerdict(join(root, 't5', 'sum.ods'), 'SUM(', 'application/vnd.oasis.opendocument.spreadsheet', deps),
 };
 
-export const EVAL_TASKS: readonly EvalTask[] = [terminalEcho, writerDoc, fileOrganize, mixedReport, calcSum];
+const archiveWeeks: EvalTask = {
+  id: 'T6', name: 'archive-weeks', kind: 'mixed', maxSteps: 25, maxMinutes: 8,
+  goal: root => 'Sort the files in ' + join(root, 't6', 'inbox') + ' by extension into new folders ' +
+    join(root, 't6', 'txt') + ', ' + join(root, 't6', 'csv') + ' and ' + join(root, 't6', 'log') +
+    ', then write ' + join(root, 't6', 'manifest.txt') + ' listing each folder name with its file count, one per line like "txt: 6"',
+  setup: root => {
+    const inbox = freshDir(root, join('t6', 'inbox'));
+    for (const dir of ['txt', 'csv', 'log']) rmSync(join(root, 't6', dir), { recursive: true, force: true });
+    rmSync(join(root, 't6', 'manifest.txt'), { force: true });
+    for (let week = 1; week <= 6; week++) writeFileSync(join(inbox, 'week' + week + '.txt'), 'week ' + week + '\n');
+    for (let file = 1; file <= 3; file++) writeFileSync(join(inbox, 'data' + file + '.csv'), 'a,b\n');
+    for (let file = 1; file <= 3; file++) writeFileSync(join(inbox, 'note' + file + '.log'), 'log\n');
+  },
+  verify: root => {
+    const expected: Record<string, number> = { txt: 6, csv: 3, log: 3 };
+    for (const [dir, count] of Object.entries(expected)) {
+      const folder = join(root, 't6', dir);
+      if (!existsSync(folder)) return { pass: false, detail: 'Missing folder: ' + folder };
+      const files = readdirSync(folder).filter(file => file.endsWith('.' + dir));
+      if (files.length !== count) return { pass: false, detail: folder + ' holds ' + files.length + ' .' + dir + ' files, expected ' + count + '.' };
+    }
+    if (readdirSync(join(root, 't6', 'inbox')).length !== 0) return { pass: false, detail: 'Inbox is not empty.' };
+    const manifest = join(root, 't6', 'manifest.txt');
+    if (!existsSync(manifest)) return { pass: false, detail: 'Missing file: ' + manifest };
+    const text = readFileSync(manifest, 'utf8');
+    for (const [dir, count] of Object.entries(expected)) {
+      if (!text.includes(dir + ': ' + count)) return { pass: false, detail: 'manifest.txt is missing "' + dir + ': ' + count + '".' };
+    }
+    return { pass: true, detail: '12 files sorted into 3 folders with a correct manifest.' };
+  },
+};
+
+export const EVAL_TASKS: readonly EvalTask[] = [terminalEcho, writerDoc, fileOrganize, mixedReport, calcSum, archiveWeeks];
