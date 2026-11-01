@@ -4,9 +4,10 @@ import type { TaskRuntimeView } from '../run/useTaskRuntime';
 
 interface WorkspacePaneProps {
   runtime: TaskRuntimeView;
+  onRetryPhase?: ((phaseId: string) => void) | undefined;
 }
 
-export function WorkspacePane({ runtime }: WorkspacePaneProps) {
+export function WorkspacePane({ runtime, onRetryPhase }: WorkspacePaneProps) {
   const task = runtime.snapshot;
   if (!task?.runId) {
     return (
@@ -21,7 +22,7 @@ export function WorkspacePane({ runtime }: WorkspacePaneProps) {
   return (
     <div className="space-y-4">
       <RunReviewPanel runtime={runtime} />
-      <MissionGraph mission={task.mission} />
+      <MissionGraph mission={task.mission} onRetryPhase={onRetryPhase} />
       {task.intent && (
         <section aria-label="Understood intent" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h3 className="text-xs font-bold text-slate-700">Understood</h3>

@@ -7,10 +7,11 @@ interface WorkspaceSidebarProps {
   runtime: TaskRuntimeView;
   open: boolean;
   onClose: () => void;
+  onRetryPhase?: ((phaseId: string) => void) | undefined;
 }
 
 /** Collapsible live-workspace drawer: screenshots, mission graph, intent. */
-export function WorkspaceSidebar({ runtime, open, onClose }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ runtime, open, onClose, onRetryPhase }: WorkspaceSidebarProps) {
   if (!open) return null;
   return (
     <aside aria-label="Live workspace" className="live-workspace-drawer">
@@ -21,7 +22,7 @@ export function WorkspaceSidebar({ runtime, open, onClose }: WorkspaceSidebarPro
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <WorkspacePane runtime={runtime} />
+        <WorkspacePane runtime={runtime} onRetryPhase={onRetryPhase} />
       </div>
     </aside>
   );

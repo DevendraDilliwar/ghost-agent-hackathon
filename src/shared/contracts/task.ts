@@ -15,7 +15,7 @@ export type AgentStatus =
   | 'stopped'
   | 'failed';
 
-export type ActionType = 'click' | 'double_click' | 'type' | 'key_press' | 'scroll' | 'wait' | 'verify';
+export type ActionType = 'click' | 'double_click' | 'type' | 'key_press' | 'scroll' | 'wait' | 'verify' | 'shell';
 
 export interface ActionVerification {
   readonly status: 'verified_success' | 'stalled_no_change' | 'error_dialog_detected' | 'human_intervention_needed';
@@ -55,7 +55,7 @@ export interface RunConfiguration {
   screenConsent: boolean;
   isolatedEnvironment: boolean;
   /** Resume a saved mission under a new run instead of starting fresh. */
-  resume?: { missionId: string };
+  resume?: { missionId: string; /** Retry intent added as a phase note; also resets stall streaks. */ note?: string };
 }
 
 export interface ClarificationQuestion {

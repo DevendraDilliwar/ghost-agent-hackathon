@@ -31,12 +31,21 @@ export function parseVerifyResponse(value: unknown): VerifyDecision {
   catch { throw new Error('Meta did not return verification as JSON. No further action was taken. Try again.'); }
   const verdict = record(parsed);
   for (const key of Object.keys(verdict)) {
-    if (!['confirmed', 'detail'].includes(key)) throw new Error('Meta returned an unsupported verification field. No further action was taken.');
+    if (!['confirmed', 'detail', 'doneSteps'].includes(key)) throw new Error('Meta returned an unsupported verification field. No further action was taken.');
   }
   if (typeof verdict.confirmed !== 'boolean') throw new Error('Meta returned an invalid verification result. No further action was taken.');
   const detail = verdict.detail;
   if (typeof detail !== 'string' || !detail.trim() || detail.length > 500 || detail.includes('\0')) {
     throw new Error('Meta returned an invalid verification detail.');
   }
-  return { confirmed: verdict.confirmed, detail, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+  let doneSteps: number[] | undefined;
+  if (verdict.doneSteps !== undefined) {
+    if (!Array.isArray(verdict.doneSteps) || verdict.doneSteps.length > 12 ||
+      verdict.doneSteps.some(step => typeof step !== 'number' || !Number.isSafeInteger(step) || step < 1)) {
+      throw new Error('Meta returned an invalid verification step audit. No further action was taken.');
+    }
+    doneSteps = [...new Set(verdict.doneSteps)].sort((a, b) => (a as number) - (b as number)) as number[];
+  }
+  return { confirmed: verdict.confirmed, detail, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
+    ...(doneSteps === undefined ? {} : { doneSteps }) };
 }

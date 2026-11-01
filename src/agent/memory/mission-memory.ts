@@ -43,6 +43,20 @@ function checkSuccess(success: unknown): string {
   return success;
 }
 
+function checkStepProgress(steps: string[], completed: unknown, active: unknown): { completedSteps: number[]; activeStep: number | null } {
+  if (!Array.isArray(completed) || completed.length > maxSteps) throw new Error('Invalid mission step progress.');
+  const done = [...new Set(completed)];
+  for (const index of done) {
+    if (!Number.isSafeInteger(index) || (index as number) < 0 || (index as number) >= steps.length) {
+      throw new Error('Invalid mission step progress.');
+    }
+  }
+  if (active !== null && (!Number.isSafeInteger(active) || (active as number) < 0 || (active as number) >= steps.length)) {
+    throw new Error('Invalid mission step progress.');
+  }
+  return { completedSteps: (done as number[]).sort((a, b) => a - b), activeStep: active as number | null };
+}
+
 export class MissionMemory {
   private readonly phases = new Map<string, PhaseRecord>();
   private readonly createdAt: number;
@@ -64,13 +78,17 @@ export class MissionMemory {
     if (!Array.isArray(plan.phases) || plan.phases.length > maxPhases) throw new Error('Invalid mission plan.');
     for (const phase of plan.phases) {
       if (!isDomainId(phase.domain) || !validStatus(phase.status)) throw new Error('Invalid mission phase.');
+      const steps = checkSteps(phase.steps);
+      const progress = checkStepProgress(steps, phase.completedSteps, phase.activeStep);
       const record: PhaseRecord = {
         phaseId: bounded(phase.phaseId, 80, 'phase id'),
         domain: phase.domain,
         goal: bounded(phase.goal, maxPhaseGoal, 'phase goal'),
         status: phase.status,
         notes: [...phase.notes],
-        steps: checkSteps(phase.steps),
+        steps,
+        completedSteps: progress.completedSteps,
+        activeStep: progress.activeStep,
         success: checkSuccess(phase.success),
         startedAt: phase.startedAt,
         finishedAt: phase.finishedAt,
@@ -96,12 +114,14 @@ export class MissionMemory {
       status: 'pending',
       notes: [],
       steps: checkSteps(opts?.steps ?? []),
+      completedSteps: [],
+      activeStep: null,
       success: checkSuccess(opts?.success ?? ''),
       startedAt: null,
       finishedAt: null,
     };
     this.phases.set(phase.phaseId, phase);
-    return { ...phase, notes: [...phase.notes], steps: [...phase.steps] };
+    return this.snapshot(phase);
   }
 
   startPhase(phaseId: string): PhaseRecord {
@@ -117,7 +137,8 @@ export class MissionMemory {
     const phase = this.require(phaseId);
     if (phase.status !== 'active') throw new Error('Only the active phase can complete.');
     const notes = note === undefined ? phase.notes : [...phase.notes, bounded(note, maxNote, 'note')];
-    return this.store({ ...phase, status: 'done', notes, finishedAt: this.now() });
+    return this.store({ ...phase, status: 'done', notes, finishedAt: this.now(),
+      completedSteps: phase.steps.map((_, index) => index), activeStep: null });
   }
 
   failPhase(phaseId: string, reason: string): PhaseRecord {
@@ -143,6 +164,31 @@ export class MissionMemory {
     return this.store({ ...phase, notes: [...phase.notes, bounded(note, maxNote, 'note')] });
   }
 
+  /**
+   * Moves the live step pointer from the model's [step N] tag (1-based).
+   * Best-effort and monotonic: invalid or backward tags leave it untouched.
+   */
+  noteActiveStep(phaseId: string, oneBased: number): PhaseRecord {
+    const phase = this.require(phaseId);
+    const index = oneBased - 1;
+    if (!Number.isSafeInteger(oneBased) || index < 0 || index >= phase.steps.length) return this.snapshot(phase);
+    if (phase.activeStep !== null && index <= phase.activeStep) return this.snapshot(phase);
+    return this.store({ ...phase, activeStep: index });
+  }
+
+  /**
+   * Verified audit: exact set of complete steps (0-based). Out-of-range
+   * entries are dropped; the pointer settles on the first incomplete step.
+   */
+  setCompletedSteps(phaseId: string, done: number[]): PhaseRecord {
+    const phase = this.require(phaseId);
+    const valid = [...new Set(done)]
+      .filter((index): index is number => Number.isSafeInteger(index) && index >= 0 && index < phase.steps.length)
+      .sort((a, b) => a - b);
+    const next = phase.steps.findIndex((_, index) => !valid.includes(index));
+    return this.store({ ...phase, completedSteps: valid, activeStep: next < 0 ? null : next });
+  }
+
   /** Domain-scoped context: this phase's goal, status and notes ONLY. */
   getPhaseContext(phaseId: string): PhaseContext {
     const phase = this.require(phaseId);
@@ -152,14 +198,14 @@ export class MissionMemory {
 
   currentPhase(): PhaseRecord | null {
     for (const phase of this.phases.values()) {
-      if (phase.status === 'active') return { ...phase, notes: [...phase.notes], steps: [...phase.steps] };
+      if (phase.status === 'active') return this.snapshot(phase);
     }
     return null;
   }
 
   nextPending(): PhaseRecord | null {
     for (const phase of this.phases.values()) {
-      if (phase.status === 'pending') return { ...phase, notes: [...phase.notes], steps: [...phase.steps] };
+      if (phase.status === 'pending') return this.snapshot(phase);
     }
     return null;
   }
@@ -168,7 +214,7 @@ export class MissionMemory {
     return {
       missionId: this.missionId,
       goal: this.goal,
-      phases: [...this.phases.values()].map(phase => ({ ...phase, notes: [...phase.notes], steps: [...phase.steps] })),
+      phases: [...this.phases.values()].map(phase => this.snapshot(phase)),
       createdAt: this.createdAt,
     };
   }
@@ -181,6 +227,10 @@ export class MissionMemory {
 
   private store(phase: PhaseRecord): PhaseRecord {
     this.phases.set(phase.phaseId, phase);
-    return { ...phase, notes: [...phase.notes], steps: [...phase.steps] };
+    return this.snapshot(phase);
+  }
+
+  private snapshot(phase: PhaseRecord): PhaseRecord {
+    return { ...phase, notes: [...phase.notes], steps: [...phase.steps], completedSteps: [...phase.completedSteps] };
   }
 }

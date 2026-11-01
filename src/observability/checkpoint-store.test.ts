@@ -12,6 +12,7 @@ function checkpoint(overrides?: Partial<PhaseCheckpoint>): PhaseCheckpoint {
     intent: { summary: 'Deploy', params: {}, missing: [] },
     clarifications: [], executedDescs: ['executed: Click the deploy button'], lastVerification: 'PRISM verified',
     inputTokens: 100, outputTokens: 20, noProgressStreak: 0, stallCycles: 0, savedAt: 1_700_000_000_000,
+    completedSteps: [0], activeStep: null,
     ...overrides,
   };
 }
@@ -91,5 +92,18 @@ describe('CheckpointStore', () => {
     delete raw.stallCycles;
     await writeFile(file, JSON.stringify(raw));
     expect((await store.load('m-1', 'phase-1'))?.stallCycles).toBe(0);
+  });
+
+  it('round-trips step progress and defaults legacy checkpoints to fresh', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'nomcp-missions-'));
+    const store = new CheckpointStore(directory);
+    await store.save(checkpoint({}));
+    expect(await store.load('m-1', 'phase-1')).toMatchObject({ completedSteps: [0], activeStep: null });
+    const file = join(directory, 'm-1', 'checkpoints', 'phase-1.json');
+    const raw = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+    delete raw.completedSteps;
+    delete raw.activeStep;
+    await writeFile(file, JSON.stringify(raw));
+    expect(await store.load('m-1', 'phase-1')).toMatchObject({ completedSteps: [], activeStep: null });
   });
 });

@@ -34,7 +34,15 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
     if (typeof missionId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(missionId)) {
       throw new Error('Invalid mission resume reference.');
     }
-    resume = { missionId };
+    const rawNote = (input.resume as Record<string, unknown>).note;
+    let note: string | undefined;
+    if (rawNote !== undefined) {
+      if (typeof rawNote !== 'string' || !rawNote.trim() || rawNote.trim().length > 500 || rawNote.includes('\0')) {
+        throw new Error('Invalid mission retry note.');
+      }
+      note = rawNote.trim();
+    }
+    resume = { missionId, ...(note === undefined ? {} : { note }) };
   }
   return {
     goal: input.goal.trim(),

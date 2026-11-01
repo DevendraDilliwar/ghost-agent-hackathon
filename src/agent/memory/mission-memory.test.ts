@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MissionMemory } from './mission-memory';
+import type { MissionPlan } from '../../shared/contracts/mission';
 
 function setup() {
   const memory = new MissionMemory('m-1', 'Deploy repo: backend to GCP, frontend to Vercel');
@@ -115,5 +116,51 @@ describe('restore and reactivate (resume path)', () => {
     const plan = memory.getPlan();
     expect(() => MissionMemory.restore({ ...plan, phases: [] }).addPhase('bad domain!', 'y')).toThrow('Invalid mission domain');
     expect(() => MissionMemory.restore({ ...plan, goal: '' })).toThrow('Invalid mission goal');
+  });
+});
+
+describe('step progress', () => {
+  it('starts fresh and moves the pointer only forward within range', () => {
+    const { memory } = setup();
+    const phase = memory.addPhase('gcp', 'Deploy backend', { steps: ['Create the service', 'Deploy', 'Verify URL'] });
+    expect([phase.completedSteps, phase.activeStep]).toEqual([[], null]);
+    memory.noteActiveStep(phase.phaseId, 2);
+    expect(memory.getPlan().phases.at(-1)).toMatchObject({ completedSteps: [], activeStep: 1 });
+    memory.noteActiveStep(phase.phaseId, 1);
+    memory.noteActiveStep(phase.phaseId, 99);
+    memory.noteActiveStep(phase.phaseId, 0);
+    expect(memory.getPlan().phases.at(-1)?.activeStep).toBe(1);
+    memory.noteActiveStep(phase.phaseId, 3);
+    expect(memory.getPlan().phases.at(-1)?.activeStep).toBe(2);
+  });
+
+  it('settles the audit and points at the first incomplete step', () => {
+    const { memory } = setup();
+    const phase = memory.addPhase('gcp', 'Deploy backend', { steps: ['Create the service', 'Deploy', 'Verify URL'] });
+    memory.noteActiveStep(phase.phaseId, 3);
+    memory.setCompletedSteps(phase.phaseId, [0, 2, 2, 99, -1]);
+    expect(memory.getPlan().phases.at(-1)).toMatchObject({ completedSteps: [0, 2], activeStep: 1 });
+    memory.setCompletedSteps(phase.phaseId, [0, 1, 2]);
+    expect(memory.getPlan().phases.at(-1)).toMatchObject({ completedSteps: [0, 1, 2], activeStep: null });
+  });
+
+  it('marks every step complete when the phase completes', () => {
+    const { memory } = setup();
+    const phase = memory.addPhase('gcp', 'Deploy backend', { steps: ['Create the service', 'Deploy'] });
+    memory.startPhase(phase.phaseId);
+    memory.completePhase(phase.phaseId);
+    expect(memory.getPlan().phases.at(-1)).toMatchObject({ status: 'done', completedSteps: [0, 1], activeStep: null });
+  });
+
+  it('rejects out-of-range step progress on restore', () => {
+    const { memory } = setup();
+    memory.addPhase('gcp', 'Deploy backend', { steps: ['Create the service'] });
+    const plan = memory.getPlan();
+    const bad = (completedSteps: unknown, activeStep: unknown) => ({
+      ...plan, phases: plan.phases.map(phase => ({ ...phase, completedSteps, activeStep })),
+    }) as unknown as MissionPlan;
+    expect(() => MissionMemory.restore(bad([1], null))).toThrow('Invalid mission step progress');
+    expect(() => MissionMemory.restore(bad([], 5))).toThrow('Invalid mission step progress');
+    expect(() => MissionMemory.restore(bad('done', null))).toThrow('Invalid mission step progress');
   });
 });

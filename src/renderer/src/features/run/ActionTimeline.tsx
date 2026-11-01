@@ -32,6 +32,8 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
         return <MousePointer className="w-3.5 h-3.5 text-slate-600" />;
       case 'type':
         return <Terminal className="w-3.5 h-3.5 text-emerald-600" />;
+      case 'shell':
+        return <Terminal className="w-3.5 h-3.5 text-slate-700" />;
       case 'key_press':
         return <Key className="w-3.5 h-3.5 text-amber-600" />;
       case 'verify':

@@ -25,8 +25,12 @@ export interface PhaseRecord {
   readonly status: PhaseStatus;
   /** Domain-scoped facts only (project ids, urls, decisions). Redacted. */
   readonly notes: string[];
-  /** Planner's step checklist for this phase (guidance, not a progress counter). */
+  /** Planner's step checklist for this phase. Progress tracked below. */
   readonly steps: string[];
+  /** Zero-based steps verified complete (Wonder audit). Optimistic pointer trail included at display time. */
+  readonly completedSteps: number[];
+  /** Zero-based live pointer from the model's [step N] tag. Null before the first tag or when settled. */
+  readonly activeStep: number | null;
   /** Visible done-condition, verified from the screen before the phase closes. */
   readonly success: string;
   readonly startedAt: number | null;
@@ -73,6 +77,10 @@ export interface PhaseCheckpoint {
   readonly noProgressStreak: number;
   /** Consecutive stall handoffs without progress. Absent in checkpoints written before the stall cap. */
   readonly stallCycles?: number;
+  /** Zero-based verified-complete steps. Absent in checkpoints written before step tracking. */
+  readonly completedSteps?: number[];
+  /** Zero-based live step pointer. Absent in checkpoints written before step tracking. */
+  readonly activeStep?: number | null;
   readonly savedAt: number;
 }
 

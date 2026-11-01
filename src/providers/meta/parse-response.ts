@@ -1,5 +1,5 @@
 import type { ModelDecision } from '../../agent/ports';
-import type { ScreenObservation } from '../../shared/contracts/desktop';
+import type { DesktopCommand, ScreenObservation } from '../../shared/contracts/desktop';
 import { validateDesktopCommand } from '../../policy/task-validation';
 
 function object(value: unknown): Record<string, unknown> {
@@ -12,7 +12,7 @@ function tokens(value: unknown): number {
   return value;
 }
 
-export function parseMetaDecision(value: unknown, observation: ScreenObservation): ModelDecision {
+export function parseMetaDecision(value: unknown, observation?: ScreenObservation): ModelDecision {
   const response = object(value);
   if (response.status === 'incomplete') {
     const details = response.incomplete_details;
@@ -44,6 +44,18 @@ export function parseMetaDecision(value: unknown, observation: ScreenObservation
   const call = calls[0];
   if (functions.length) {
     const handoff = functions[0]!;
+    if (handoff.name === 'run_shell') {
+      if (typeof handoff.arguments !== 'string' || handoff.arguments.length > 4096) throw new Error('Meta returned an unsupported shell call.');
+      let shellArgs: unknown;
+      try { shellArgs = JSON.parse(handoff.arguments) as unknown; }
+      catch { throw new Error('Meta returned an invalid shell call.'); }
+      const shellCommand = object(shellArgs).command;
+      if (typeof shellCommand !== 'string' || !shellCommand.trim() || shellCommand.length > 2000 || shellCommand.includes('\0')) {
+        throw new Error('Meta returned an invalid shell call.');
+      }
+      return { action: null, shell: { command: shellCommand.trim() }, message, warnings,
+        inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+    }
     if (handoff.name !== 'request_user_help' || typeof handoff.arguments !== 'string' || handoff.arguments.length > 4096) throw new Error('Meta returned an unsupported handoff.');
     let argumentsValue: unknown;
     try { argumentsValue = JSON.parse(handoff.arguments) as unknown; }
@@ -54,10 +66,14 @@ export function parseMetaDecision(value: unknown, observation: ScreenObservation
       handoff: { kind: args.kind as 'verification' | 'login' | 'clarification', reason: args.reason.trim() } };
   }
   let action = null;
+  let actions: DesktopCommand[] | undefined;
   if (call) {
+    if (!observation) throw new Error('Meta returned a desktop action without a screenshot to validate it against. No action was executed.');
     if (!Array.isArray(call.actions) || call.actions.length < 1 || call.actions.length > 20) throw new Error('Meta returned an invalid action list.');
-    action = validateDesktopCommand(call.actions[0], observation);
-    if (call.actions.length > 1) warnings.push('Only this first action will execute. The agent will observe again before deciding another step.');
+    const batch = call.actions.slice(0, 5).map(entry => validateDesktopCommand(entry, observation));
+    action = batch[0]!;
+    actions = batch;
+    if (call.actions.length > 5) warnings.push('Only the first 5 actions will execute. The agent will observe again before deciding another batch.');
     if (call.pending_safety_checks !== undefined) {
       if (!Array.isArray(call.pending_safety_checks) || call.pending_safety_checks.length > 10) throw new Error('Invalid provider safety checks.');
       for (const check of call.pending_safety_checks) {
@@ -69,5 +85,6 @@ export function parseMetaDecision(value: unknown, observation: ScreenObservation
   } else if (!message) {
     throw new Error('Meta returned neither an action nor a result.');
   }
-  return { action, message, warnings, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+  return { action, message, warnings, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
+    ...(actions === undefined ? {} : { actions }) };
 }

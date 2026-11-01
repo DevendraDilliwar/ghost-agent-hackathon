@@ -10,8 +10,10 @@ import type { RunRecord, RunSummary } from '../../shared/contracts/history';
 import type { MissionSummary } from '../../shared/contracts/mission';
 import { TaskController } from '../../agent/task-controller';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
+import { LocalShell } from '../../desktop/linux/local-shell';
 import { MetaComputerModel } from '../../providers/meta/meta-computer-model';
 import { describeCommand, validateDesktopCommand } from '../../policy/task-validation';
+import { validateShellCommand } from '../../policy/shell-validation';
 import type { RuntimeReadiness } from '../../shared/contracts/desktop';
 import { IPC_CHANNELS } from '../../shared/ipc/channels';
 import { ModelConnection } from '../config/model-connection';
@@ -100,6 +102,7 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     checkpoints,
     journal,
     desktop,
+    shell: new LocalShell(),
     model: {
       decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input),
       parseIntent: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).parseIntent(input),
@@ -108,7 +111,7 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
       verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifyText(input),
     },
     id: randomUUID,
-    describe: describeCommand, validateAction: validateDesktopCommand,
+    describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,
     changed: snapshot => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(IPC_CHANNELS.taskChanged, snapshot);
       if (!controls.isDestroyed() && !controls.webContents.isDestroyed()) controls.webContents.send(IPC_CHANNELS.controlsChanged, controlsSnapshot(snapshot, shortcut?.label ?? null));

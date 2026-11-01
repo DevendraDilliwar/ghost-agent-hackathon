@@ -39,6 +39,23 @@ describe('parseVerifyResponse', () => {
     expect(() => parseVerifyResponse(envelope(text))).toThrow('unsupported verification field');
   });
 
+  it('parses the step audit, sorted and deduplicated', () => {
+    const text = JSON.stringify({ confirmed: false, detail: 'Service page open.', doneSteps: [3, 1, 1] });
+    expect(parseVerifyResponse(envelope(text)).doneSteps).toEqual([1, 3]);
+  });
+
+  it('omits the audit when the model skips it', () => {
+    const text = JSON.stringify({ confirmed: true, detail: 'Visible.' });
+    expect(parseVerifyResponse(envelope(text)).doneSteps).toBeUndefined();
+  });
+
+  it('rejects a malformed step audit', () => {
+    for (const doneSteps of [[0], [-1], [1.5], ['1'], new Array(13).fill(1), 'all']) {
+      const text = JSON.stringify({ confirmed: true, detail: 'Visible.', doneSteps });
+      expect(() => parseVerifyResponse(envelope(text))).toThrow('invalid verification step audit');
+    }
+  });
+
   it('rejects a failed response without acting', () => {
     expect(() => parseVerifyResponse({ status: 'failed' })).toThrow('could not verify');
   });

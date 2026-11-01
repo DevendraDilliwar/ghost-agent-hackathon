@@ -38,6 +38,19 @@ describe('task boundary validation', () => {
     expect(validateRunConfiguration({ ...valid }).resume).toBeUndefined();
     expect(validateRunConfiguration({ ...valid, resume: { missionId: 'abc-123' } }).resume).toEqual({ missionId: 'abc-123' });
   });
+  it('accepts a retry note on resume and trims it', () => {
+    expect(validateRunConfiguration({ ...valid, resume: { missionId: 'abc-123', note: '  Retry from step 2.  ' } }).resume)
+      .toEqual({ missionId: 'abc-123', note: 'Retry from step 2.' });
+  });
+  it.each([
+    { ...valid, resume: { missionId: 'abc-123', note: '' } },
+    { ...valid, resume: { missionId: 'abc-123', note: '   ' } },
+    { ...valid, resume: { missionId: 'abc-123', note: 'x'.repeat(501) } },
+    { ...valid, resume: { missionId: 'abc-123', note: 'bad\0note' } },
+    { ...valid, resume: { missionId: 'abc-123', note: 42 } },
+  ])('rejects an invalid retry note', value => {
+    expect(() => validateRunConfiguration(value)).toThrow('Invalid mission retry note');
+  });
   it.each([
     { ...valid, resume: { missionId: '../escape' } }, { ...valid, resume: { missionId: '' } },
     { ...valid, resume: { missionId: 'x'.repeat(81) } }, { ...valid, resume: 'm-1' }, { ...valid, resume: {} },

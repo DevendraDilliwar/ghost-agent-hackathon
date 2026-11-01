@@ -176,9 +176,16 @@ function validMission(value: unknown): MissionPlan | null | undefined {
     for (const key of ['startedAt', 'finishedAt'] as const) {
       if (phase[key] !== null && (typeof phase[key] !== 'number' || !Number.isSafeInteger(phase[key]) || (phase[key] as number) < 0)) return undefined;
     }
+    const completedSteps = Array.isArray(phase.completedSteps) && phase.completedSteps.length <= 12 &&
+      (phase.completedSteps as unknown[]).every(index => typeof index === 'number' && Number.isSafeInteger(index) && index >= 0 && index < steps.length)
+      ? [...phase.completedSteps] as number[]
+      : [];
+    const activeStep = typeof phase.activeStep === 'number' && Number.isSafeInteger(phase.activeStep) &&
+      phase.activeStep >= 0 && phase.activeStep < steps.length ? phase.activeStep : null;
     phases.push({
       phaseId: phase.phaseId, domain: phase.domain, goal: phaseGoal, status: phase.status as PhaseStatus,
       notes, steps, success, startedAt: phase.startedAt as number | null, finishedAt: phase.finishedAt as number | null,
+      completedSteps, activeStep,
     });
   }
   return { missionId: data.missionId, goal, phases, createdAt: data.createdAt };
@@ -264,6 +271,8 @@ export function toRunRecord(snapshot: TaskSnapshot): Omit<RunRecord, 'createdAt'
         notes: phase.notes.slice(0, 50).map(note => note.slice(0, 600)),
         steps: phase.steps.slice(0, 12).map(step => step.slice(0, 200)),
         success: phase.success.slice(0, 500), startedAt: phase.startedAt, finishedAt: phase.finishedAt,
+        completedSteps: phase.completedSteps.filter(index => index < phase.steps.length).slice(0, 12),
+        activeStep: phase.activeStep !== null && phase.activeStep < phase.steps.length ? phase.activeStep : null,
       })),
     } : null,
   };

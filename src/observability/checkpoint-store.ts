@@ -171,11 +171,19 @@ function validCheckpoint(value: unknown, missionId: string, phaseId: string): Ph
   if (data.stallCycles !== undefined &&
     (typeof data.stallCycles !== 'number' || !Number.isSafeInteger(data.stallCycles) || data.stallCycles < 0)) return null;
   const stallCycles = data.stallCycles === undefined ? 0 : (data.stallCycles as number);
+  // Step progress: absent in checkpoints written before step tracking, so default to fresh.
+  const completedSteps = data.completedSteps === undefined ? [] : data.completedSteps;
+  if (!Array.isArray(completedSteps) || completedSteps.length > 12 ||
+    completedSteps.some(index => typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0 || index >= steps.length)) return null;
+  const activeStep = data.activeStep === undefined ? null : data.activeStep;
+  if (activeStep !== null && (typeof activeStep !== 'number' || !Number.isSafeInteger(activeStep) || activeStep < 0 || activeStep >= steps.length)) return null;
   return {
     missionId, phaseId, order: data.order, domain: data.domain as DomainId, status: data.status as PhaseStatus,
     goal: data.goal, notes, steps, success: data.success, intent, clarifications, executedDescs,
     lastVerification: data.lastVerification as string | null,
     inputTokens: data.inputTokens as number, outputTokens: data.outputTokens as number,
-    noProgressStreak: data.noProgressStreak as number, stallCycles, savedAt: data.savedAt as number,
+    noProgressStreak: data.noProgressStreak as number, stallCycles,
+    completedSteps: [...completedSteps] as number[], activeStep: activeStep as number | null,
+    savedAt: data.savedAt as number,
   };
 }

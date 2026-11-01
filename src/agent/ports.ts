@@ -7,8 +7,29 @@ export interface DesktopPort {
   execute(action: DesktopCommand, observation: ScreenObservation, signal: AbortSignal): Promise<void>;
 }
 
+export interface ShellCall {
+  readonly command: string;
+}
+
+export interface ShellResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly truncated: boolean;
+  readonly timedOut: boolean;
+  readonly durationMs: number;
+}
+
+export interface ShellPort {
+  run(command: string, signal: AbortSignal): Promise<ShellResult>;
+}
+
 export interface ModelDecision {
   readonly action: DesktopCommand | null;
+  /** Follow-up actions from the same screenshot. Absent or empty means single-step. */
+  readonly actions?: DesktopCommand[];
+  /** Terminal command to run instead of a desktop action. Never combined with action. */
+  readonly shell?: ShellCall;
   readonly message: string;
   readonly warnings: string[];
   readonly inputTokens: number;
@@ -25,6 +46,8 @@ export interface IntentDecision {
 export interface VerifyDecision {
   readonly confirmed: boolean;
   readonly detail: string;
+  /** One-based planned steps visibly complete. Absent when the audit was skipped. */
+  readonly doneSteps?: number[];
   readonly inputTokens: number;
   readonly outputTokens: number;
 }
@@ -53,7 +76,8 @@ export interface CheckpointPort {
 export interface ModelPort {
   decide(input: {
     goal: string;
-    observation: ScreenObservation;
+    /** Absent after a terminal command: the model decides from text output, no screenshot. */
+    observation?: ScreenObservation;
     history: string[];
     signal: AbortSignal;
     grounding?: import('../shared/contracts/grounding').GroundingResult;
@@ -74,6 +98,8 @@ export interface ModelPort {
   }): Promise<VerifyDecision>;
   verifySuccess(input: {
     condition: string;
+    /** Numbered planned steps for the completion audit. Omit when the phase has none. */
+    steps?: string[];
     observation: ScreenObservation;
     signal: AbortSignal;
   }): Promise<VerifyDecision>;

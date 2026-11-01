@@ -46,7 +46,8 @@ function setup(overrides?: Partial<import('./task-controller').ControllerDepende
   const clock = { now: 1000 };
   const controller = new TaskController({
     desktop, model, id: () => 'id-' + ++id, describe: () => 'Click the test target',
-    validateAction: action => action as NonNullable<ModelDecision['action']>, changed, now: () => clock.now,
+    validateAction: action => action as NonNullable<ModelDecision['action']>, validateShell: (command: string) => command,
+    changed, now: () => clock.now,
     ...overrides,
   });
   controllers.push(controller);
@@ -181,6 +182,146 @@ describe('task lifecycle', () => {
     await flush();
     expect(controller.getSnapshot().status).toBe('failed');
     expect(desktop.execute).toHaveBeenCalledTimes(1);
+  });
+
+  describe('action batches', () => {
+    const batchOf3 = { ...proposed, actions: [
+      { type: 'click', x: 10, y: 10, button: 'left' },
+      { type: 'type', text: 'mkdir -p ~/Documents/Expense-Nov' },
+      { type: 'keypress', keys: ['Enter'] },
+    ] };
+
+    it('runs the whole batch from one decision in full_access mode', async () => {
+      const { controller, model, desktop } = setup();
+      model.decide.mockResolvedValueOnce(batchOf3).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(model.decide).toHaveBeenCalledTimes(2);
+      expect(desktop.execute).toHaveBeenCalledTimes(3);
+      expect(controller.getSnapshot().actions.filter(action => action.status === 'executed')).toHaveLength(3);
+    });
+
+    it('reviews one action at a time in ask_approval mode', async () => {
+      const { controller, model, desktop } = setup();
+      model.decide.mockResolvedValue(batchOf3);
+      const run = controller.start(configuration);
+      await flush();
+      expect(controller.getSnapshot().status).toBe('awaiting_approval');
+      expect(controller.getSnapshot().actions).toHaveLength(1);
+      expect(desktop.execute).not.toHaveBeenCalled();
+      controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
+      await flush();
+      expect(desktop.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the paid type re-check when PRISM already sees the typed result', async () => {
+      const { controller, desktop, model } = setup();
+      const changed = { ...frame, image: 'data:image/png;base64,ZGlmZmVyZW50LWZyYW1l' };
+      desktop.capture.mockResolvedValueOnce(frame).mockResolvedValue(changed);
+      model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'hello' } }).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(model.verifyText).not.toHaveBeenCalled();
+      expect(controller.getSnapshot().actions[0]?.verification?.summary).toContain('paid re-check skipped');
+    });
+
+    it('stamps think/see timing on step summaries when the clock advances', async () => {
+      const journal = new StubJournal();
+      let tick = 1000;
+      const { controller, model } = setup({ journal, now: () => (tick += 500) });
+      model.decide.mockResolvedValueOnce(proposed).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      const summary = controller.getSnapshot().actions[0]?.verification?.summary ?? '';
+      expect(summary).toContain('[think ');
+      expect(summary).toContain('· see ');
+      expect(journal.events.find(event => event.stage === 'decide')?.durationMs).toBeGreaterThan(0);
+      expect(journal.events.find(event => event.stage === 'verify')?.durationMs).toBeGreaterThan(0);
+    });
+  });
+
+  describe('terminal commands', () => {
+    const shellResult = (overrides?: Partial<{ exitCode: number; stdout: string; stderr: string; truncated: boolean; timedOut: boolean; durationMs: number }>) => ({
+      exitCode: 0, stdout: 'ok', stderr: '', truncated: false, timedOut: false, durationMs: 5, ...overrides,
+    });
+    const shellDecision = (command: string) => ({ action: null, shell: { command }, message: '', warnings: [], inputTokens: 10, outputTokens: 5 });
+
+    it('runs a terminal command and decides the next step from its text output without a new screenshot', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'Expense-Nov' }));
+      const { controller, desktop, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValueOnce(shellDecision('ls ~/Documents')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run.mock.calls[0]?.[0]).toBe('ls ~/Documents');
+      expect(model.decide.mock.calls[0]?.[0].observation).toBeDefined();
+      expect(model.decide.mock.calls[1]?.[0].observation).toBeUndefined();
+      const secondHistory: string[] = model.decide.mock.calls[1]?.[0].history;
+      expect(secondHistory).toContain('executed: $ ls ~/Documents');
+      expect(secondHistory.join('\n')).toContain('Shell exit 0');
+      expect(secondHistory.join('\n')).toContain('Expense-Nov');
+      expect(desktop.capture).toHaveBeenCalledTimes(3);
+      expect(model.verifyText).not.toHaveBeenCalled();
+      expect(controller.getSnapshot().actions[0]).toMatchObject({ type: 'shell', status: 'executed' });
+    });
+
+    it('fails the run when a terminal command is blocked by policy', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({}));
+      const { controller, model } = setup({ shell: { run }, validateShell: (command: string) => {
+        if (command.includes('sudo')) throw new Error('Blocked terminal command: "sudo" is never allowed.');
+        return command;
+      } });
+      model.decide.mockResolvedValueOnce(shellDecision('sudo ls')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+      expect(run).not.toHaveBeenCalled();
+      expect(controller.getSnapshot().message).toContain('Blocked terminal command');
+    });
+
+    it('fails honestly when the host has no shell executor', async () => {
+      const { controller, model } = setup();
+      model.decide.mockResolvedValueOnce(shellDecision('ls')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access' });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+      expect(controller.getSnapshot().message).toContain('shell executor');
+    });
+
+    it('reviews terminal commands one at a time in ask_approval mode', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'created' }));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValueOnce(shellDecision('mkdir -p ~/x')).mockResolvedValue(finished);
+      const started = controller.start(configuration);
+      await flush();
+      expect(controller.getSnapshot().status).toBe('awaiting_approval');
+      expect(controller.getSnapshot().actions[0]?.type).toBe('shell');
+      expect(controller.getSnapshot().message).toContain('terminal command');
+      expect(run).not.toHaveBeenCalled();
+      controller.review(started.runId!, controller.getSnapshot().pendingActionId!, true);
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(controller.getSnapshot().actions).toHaveLength(1);
+      expect(controller.getSnapshot().actions[0]?.status).toBe('executed');
+    });
+
+    it('hands control to the user after three failing terminal commands', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ exitCode: 1, stdout: '', stderr: 'nope' }));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValue(shellDecision('false'));
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+      expect(run).toHaveBeenCalledTimes(3);
+      expect(controller.getSnapshot().handoff?.reason).toContain('Three terminal commands failed');
+    });
+
+    it('counts terminal commands against the action limit', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({}));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValue(shellDecision('echo hi'));
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 1 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(controller.getSnapshot().message).toContain('action limit');
+    });
   });
 
   it('fails before capture or inference when desktop preflight fails', async () => {
@@ -576,6 +717,47 @@ describe('mission planning and checkpoints', () => {
     const mission = controller.getSnapshot().mission;
     expect(mission?.goal).toBe('Open the test page');
     expect(mission?.phases.map(phase => [phase.domain, phase.status])).toEqual([['shared', 'active']]);
+  });
+
+  it('advances the live step pointer from the model [step N] tag', async () => {
+    const { controller, model } = setup();
+    model.plan.mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: ['First', 'Second'], success: 'Goal visibly complete' }], inputTokens: 8, outputTokens: 4 });
+    model.decide.mockResolvedValueOnce({ ...proposed, message: '[step 2] Clicking the second thing.' }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(controller.getMissionPlan()?.phases[0]).toMatchObject({ activeStep: 1, completedSteps: [] });
+  });
+
+  it('settles verified steps from the Wonder audit and sends the step list', async () => {
+    const { controller, model } = setup();
+    model.plan.mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: ['First', 'Second'], success: 'Goal visibly complete' }], inputTokens: 8, outputTokens: 4 });
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess.mockResolvedValue({ confirmed: false, detail: 'Working on it.', doneSteps: [1], inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getMissionPlan()?.phases[0]).toMatchObject({ completedSteps: [0], activeStep: 1 }));
+    expect(model.verifySuccess.mock.calls[0]?.[0].steps).toEqual(['First', 'Second']);
+  });
+
+  it('retries a failed phase with a refocus note and fresh stall streaks', async () => {
+    const store = stubStore({ missionId: 'm-1', goal: 'Ship the repo', createdAt: 1 }, [
+      savedPhase({ status: 'failed', notes: ['FAILED: stuck'], noProgressStreak: 2 }),
+    ]);
+    const { controller, desktop } = setup({ checkpoints: store });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10, resume: { missionId: 'm-1', note: 'Retry requested from step 1.' } });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(desktop.execute).toHaveBeenCalledTimes(2);
+    expect(controller.getMissionPlan()?.phases[0]?.status).toBe('active');
+    expect(controller.getMissionPlan()?.phases[0]?.notes).toContain('Retry requested from step 1.');
+  });
+
+  it('keeps restored stall streaks on a plain resume without a retry note', async () => {
+    const store = stubStore({ missionId: 'm-1', goal: 'Ship the repo', createdAt: 1 }, [
+      savedPhase({ status: 'failed', notes: ['FAILED: stuck'], noProgressStreak: 2 }),
+    ]);
+    const { controller, desktop } = setup({ checkpoints: store });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10, resume: { missionId: 'm-1' } });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(desktop.execute).toHaveBeenCalledTimes(1);
   });
 
   it('plans domain phases after intent and advances when the model stops mid-mission', async () => {

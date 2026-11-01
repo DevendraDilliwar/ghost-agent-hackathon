@@ -14,6 +14,7 @@ import { loadDesktopNotifications, loadTextSize, loadThemeMode, saveDesktopNotif
 import { ChatThread } from './ChatThread';
 import { SettingsOverlay } from './SettingsOverlay';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
+import { buildRetryNote } from '../mission/MissionGraph';
 
 export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const [showSetup, setShowSetup] = useState(false);
@@ -88,6 +89,13 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
     if (!viewRecord?.missionId) return;
     launch({ goal: viewRecord.goal, maxSteps, maxMinutes, approvalMode, screenConsent, isolatedEnvironment, resume: { missionId: viewRecord.missionId } });
   };
+  const retryPhase = (phaseId: string) => {
+    const mission = runtime.snapshot?.mission;
+    const phase = mission?.phases.find(item => item.phaseId === phaseId);
+    if (!mission || !phase || phase.status !== 'failed') return;
+    launch({ goal: mission.goal, maxSteps, maxMinutes, approvalMode, screenConsent, isolatedEnvironment,
+      resume: { missionId: mission.missionId, note: buildRetryNote(phase) } });
+  };
   const newChat = () => {
     if (active || runtime.pending) return;
     setHiddenRunId(task?.runId ?? null);
@@ -158,7 +166,8 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
           </div>
         </footer>
       </section>
-      <WorkspaceSidebar runtime={runtime} open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} />
+      <WorkspaceSidebar runtime={runtime} open={workspaceOpen} onClose={() => setWorkspaceOpen(false)}
+        onRetryPhase={active || runtime.pending || !ready || !screenConsent || !isolatedEnvironment ? undefined : retryPhase} />
       {showSetup && !active && <SettingsOverlay runtime={runtime} approvalMode={approvalMode} setApprovalMode={setApprovalMode} screenConsent={screenConsent} setScreenConsent={setScreenConsent} isolatedEnvironment={isolatedEnvironment} setIsolatedEnvironment={setIsolatedEnvironment} maxSteps={maxSteps} setMaxSteps={setMaxSteps} maxMinutes={maxMinutes} setMaxMinutes={setMaxMinutes} textSize={textSize} setTextSize={changeTextSize} themeMode={themeMode} setThemeMode={changeThemeMode} desktopNotifications={desktopNotifications} setDesktopNotifications={changeDesktopNotifications} onClose={() => setShowSetup(false)} />}
     </div>
   );

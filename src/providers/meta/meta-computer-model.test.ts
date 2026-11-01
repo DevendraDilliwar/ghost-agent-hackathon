@@ -79,14 +79,24 @@ describe('Meta computer-use adapter', () => {
     expect(() => parseMetaDecision({ ...response, usage: undefined }, frame)).toThrow();
   });
 
-  it('keeps provider safety warnings for explicit action review and selects only one action', () => {
+  it('keeps the whole batch with provider safety warnings for explicit action review', () => {
     const decision = parseMetaDecision({
       ...response,
       output: [{ type: 'computer_call', actions: [{ type: 'wait' }, { type: 'screenshot' }], pending_safety_checks: [{ message: 'Review the action carefully.' }] }],
     }, frame);
     expect(decision.action).toEqual({ type: 'wait' });
-    expect(decision.warnings).toHaveLength(2);
+    expect(decision.actions).toEqual([{ type: 'wait' }, { type: 'screenshot' }]);
+    expect(decision.warnings).toHaveLength(1);
     expect(decision.warnings).toContain('Review the action carefully.');
+  });
+
+  it('caps a batch at five actions with a warning', () => {
+    const decision = parseMetaDecision({
+      ...response,
+      output: [{ type: 'computer_call', actions: [{ type: 'wait' }, { type: 'wait' }, { type: 'wait' }, { type: 'wait' }, { type: 'wait' }, { type: 'wait' }] }],
+    }, frame);
+    expect(decision.actions).toHaveLength(5);
+    expect(decision.warnings).toContain('Only the first 5 actions will execute. The agent will observe again before deciding another batch.');
   });
 
   it('sanitizes invalid JSON and rejects an oversized response', async () => {
@@ -105,8 +115,37 @@ describe('Meta computer-use adapter', () => {
     expect(decision.handoff).toEqual({ kind: 'verification', reason: 'Complete the check yourself.' });
     expect(() => parseMetaDecision({ ...response, output: [help, ...response.output] }, frame)).toThrow('Multiple tool');
     expect(() => parseMetaDecision({ ...response, output: [{ ...help, arguments: '{' }] }, frame)).toThrow('invalid handoff');
-    expect(() => parseMetaDecision({ ...response, output: [{ ...help, name: 'run_shell' }] }, frame)).toThrow('unsupported handoff');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...help, name: 'unknown_tool' }] }, frame)).toThrow('unsupported handoff');
     expect(() => parseMetaDecision({ ...response, output: [{ ...help, arguments: JSON.stringify({ kind: 'verification', reason: '' }) }] }, frame)).toThrow('invalid handoff');
+  });
+
+  it('parses a run_shell call and never combines it with a desktop action', () => {
+    const shell = { type: 'function_call', name: 'run_shell', arguments: JSON.stringify({ command: 'mkdir -p ~/Documents/Expense-Nov' }) };
+    const decision = parseMetaDecision({ ...response, output: [shell] }, frame);
+    expect(decision.action).toBeNull();
+    expect(decision.shell).toEqual({ command: 'mkdir -p ~/Documents/Expense-Nov' });
+    expect(() => parseMetaDecision({ ...response, output: [shell, ...response.output] }, frame)).toThrow('Multiple tool');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: '{' }] }, frame)).toThrow('invalid shell call');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: '' }) }] }, frame)).toThrow('invalid shell call');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: 'x'.repeat(2001) }) }] }, frame)).toThrow('invalid shell call');
+  });
+
+  it('rejects a desktop action that arrives without a screenshot to validate it against', () => {
+    expect(() => parseMetaDecision(response, undefined)).toThrow('without a screenshot');
+  });
+
+  it('decides from text alone after a terminal command, sending no screenshot', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 40, output_tokens: 8 },
+      output: [{ type: 'function_call', name: 'run_shell', arguments: JSON.stringify({ command: 'ls' }) }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const decision = await model.decide({ goal: 'List files', history: ['executed: $ pwd'], signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(JSON.stringify(body.input)).not.toContain('input_image');
+    expect(JSON.stringify(body.input)).toContain('No screenshot was taken');
+    expect(body.tools.map((tool: { name?: string; type: string }) => tool.name ?? tool.type)).toContain('run_shell');
+    expect(decision.shell).toEqual({ command: 'ls' });
   });
 
   it('tests the text API with no screen data, no tools, and a bounded response', async () => {
