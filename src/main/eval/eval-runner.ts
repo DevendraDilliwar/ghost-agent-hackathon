@@ -24,6 +24,8 @@ export interface EvalResult {
   readonly success: boolean;
   readonly verifyDetail: string;
   readonly status: string;
+  readonly message: string;
+  readonly lastActions: string[];
   readonly steps: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -32,6 +34,7 @@ export interface EvalResult {
   readonly handoffs: number;
   readonly timedOut: boolean;
   readonly workdir: string;
+  readonly journalFile: string | null;
 }
 
 interface EvalContext {
@@ -72,8 +75,9 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   try {
     task.setup(ctx.root);
   } catch (error) {
-    return { ...base, success: false, verifyDetail: 'setup failed: ' + message(error), status: 'setup-error',
-      steps: 0, inputTokens: 0, outputTokens: 0, durationMs: Date.now() - started, stalls: 0, handoffs: 0, timedOut: false };
+    return { ...base, success: false, verifyDetail: 'setup failed: ' + message(error), status: 'setup-error', message: '',
+      lastActions: [], steps: 0, inputTokens: 0, outputTokens: 0, durationMs: Date.now() - started, stalls: 0, handoffs: 0,
+      timedOut: false, journalFile: null };
   }
   const journal = new CollectingJournal();
   let latest: TaskSnapshot | null = null;
@@ -117,8 +121,9 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
     runId = controller.start({ goal: task.goal(ctx.root), maxSteps: task.maxSteps, maxMinutes: task.maxMinutes,
       approvalMode: 'full_access', screenConsent: true, isolatedEnvironment: true }).runId ?? null;
   } catch (error) {
-    return { ...base, success: false, verifyDetail: 'start failed: ' + message(error), status: 'start-error',
-      steps: 0, inputTokens: 0, outputTokens: 0, durationMs: Date.now() - started, stalls: 0, handoffs: 0, timedOut: false };
+    return { ...base, success: false, verifyDetail: 'start failed: ' + message(error), status: 'start-error', message: '',
+      lastActions: [], steps: 0, inputTokens: 0, outputTokens: 0, durationMs: Date.now() - started, stalls: 0, handoffs: 0,
+      timedOut: false, journalFile: null };
   }
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -140,6 +145,14 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   const executed = snapshot.actions.filter(action => action.status === 'executed').length;
   const stalls = journal.events.filter(event => event.outcome === 'stalled').length;
   const handoffs = journal.events.filter(event => event.stage === 'handoff').length;
+  let journalFile: string | null = null;
+  try {
+    const file = join(ctx.root, task.id + '-journal.json');
+    writeFileSync(file, JSON.stringify(journal.events, null, 2));
+    journalFile = file;
+  } catch {
+    // Journal dump must never break the scorecard.
+  }
   let verdict: { pass: boolean; detail: string };
   try {
     verdict = task.verify(ctx.root);
@@ -148,8 +161,10 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   }
   return { ...base, success: verdict.pass,
     verifyDetail: verdict.detail + (handoff ? ' Handoff: ' + handoff : '') + (timedOut ? ' (eval timeout)' : ''),
-    status: snapshot.status, steps: executed, inputTokens: snapshot.inputTokens, outputTokens: snapshot.outputTokens,
-    durationMs: Date.now() - started, stalls, handoffs, timedOut };
+    status: snapshot.status, message: snapshot.message.slice(0, 500),
+    lastActions: snapshot.actions.slice(-5).map(action => action.status + ': ' + action.description.slice(0, 120)),
+    steps: executed, inputTokens: snapshot.inputTokens, outputTokens: snapshot.outputTokens,
+    durationMs: Date.now() - started, stalls, handoffs, timedOut, journalFile };
 }
 
 /**
@@ -186,6 +201,7 @@ export async function runEvalCli(): Promise<number> {
       console.log('  → ' + (result.success ? 'PASS' : 'FAIL') + ' ' + result.verifyDetail +
         ' [' + result.status + ', ' + result.steps + ' steps, ' + Math.round(result.durationMs / 1000) + 's, ' +
         result.inputTokens + '/' + result.outputTokens + ' tok, ' + result.stalls + ' stalls]');
+      if (result.message) console.log('  msg: ' + result.message.slice(0, 300));
     }
     const outDir = join(process.cwd(), 'eval-results');
     mkdirSync(outDir, { recursive: true });
