@@ -92,7 +92,7 @@ export function ChatThread({ runtime, onOpenSetup }: ChatThreadProps) {
         {task?.screenshot && !task.awaitingCompletion && (
           <figure className="message-image">
             <img src={task.screenshot} alt="Latest desktop screenshot from the current task" />
-            <a className="image-download" href={task.screenshot} download="nomcp-desktop.png" aria-label="Download latest desktop screenshot"><Download size={19} /></a>
+            <a className="image-download" href={task.screenshot} download="ghost-desktop.png" aria-label="Download latest desktop screenshot"><Download size={19} /></a>
           </figure>
         )}
         {task?.awaitingCompletion && <RunReviewPanel runtime={runtime} />}

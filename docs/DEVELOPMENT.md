@@ -63,7 +63,7 @@ Electron embeds the React interface in its desktop window. Vite's localhost serv
 Use a disposable Ubuntu **X11** desktop with one display and `xdotool` installed at `/usr/bin/xdotool`. The current host reports Wayland; the implemented preflight blocks input there. No host session, package, or permissions were changed automatically.
 
 1. Use the preferred Node 24 line from `.nvmrc`, or a compatible supported version from package.json.
-2. Install dependencies with `npm ci`. Electron's official runtime must download successfully before desktop startup.
+2. Install dependencies with `pnpm install` (pnpm only — `npm ci` creates a conflicting lockfile). Electron's official runtime must download successfully before desktop startup.
 3. Run `npm run dev`. In Settings, enter the Meta key and choose Connect & test. Alternatively, configure ignored `.env.local` from `.env.example` for development and choose Test configured key.
 4. The test sends one short text-only request to Meta. A successful text test does not prove computer-use/image capability. Read the remaining desktop preflight results.
 5. Confirm cloud screenshot processing and the isolated environment, enter a simple goal, choose limits if needed, and start.

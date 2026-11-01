@@ -74,7 +74,7 @@ The application defines the commands below except `test:desktop`, which remains 
 
 | Command | Intended check |
 | --- | --- |
-| `npm ci` | Install locked dependencies in a clean environment |
+| `pnpm install` | Install locked dependencies in a clean environment |
 | `npm run typecheck` | Strict TypeScript checking across main, preload, renderer, and shared contracts |
 | `npm run lint` | Configured source/style checks |
 | `npm run test:unit` | Action validation, state transitions, cancellation, limits, and failure recovery with a fake driver |

@@ -18,7 +18,7 @@ export function registerApplicationIpc(window: BrowserWindow, rendererUrl: strin
     }
 
     return {
-      name: 'NoMCP',
+      name: 'Ghost Agent',
       version: app.getVersion(),
       platform: process.platform,
       desktopSession: getDesktopSession(process.env.XDG_SESSION_TYPE),

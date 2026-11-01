@@ -23,9 +23,9 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
         const isUser = message.sender === 'user';
         return (
           <article key={message.id} className={`chat-message ${isUser ? 'user-message' : 'agent-message'}`}>
-            {!isUser && <div className="message-author"><span className="brand-spark" aria-hidden="true">✦</span><span>NoMCP</span></div>}
+            {!isUser && <div className="message-author"><span className="brand-spark" aria-hidden="true">✦</span><span>Ghost</span></div>}
             <div className="message-body"><p>{message.content}</p></div>
-            {message.verificationImage && <figure className="message-image"><img src={message.verificationImage} alt="Desktop evidence captured for this task" /><a className="image-download" href={message.verificationImage} download={`nomcp-${message.id}.png`} aria-label="Download desktop evidence"><Download size={19} /></a></figure>}
+            {message.verificationImage && <figure className="message-image"><img src={message.verificationImage} alt="Desktop evidence captured for this task" /><a className="image-download" href={message.verificationImage} download={`ghost-${message.id}.png`} aria-label="Download desktop evidence"><Download size={19} /></a></figure>}
             {!isUser && <div className="message-actions"><button type="button" className="chat-icon-button" aria-label={copied === message.id ? 'Message copied' : 'Copy response'} title="Copy response" onClick={() => void copyMessage(message)}>{copied === message.id ? <Check /> : <Copy />}</button><time>{message.timestamp}</time></div>}
           </article>
         );

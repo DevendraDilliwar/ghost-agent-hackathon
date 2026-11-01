@@ -1,6 +1,6 @@
 import type { TaskSnapshot } from '../../../shared/contracts/task';
 
-export interface TaskNotificationEvent {
+interface TaskNotificationEvent {
   readonly key: string;
   readonly title: string;
   readonly body: string;

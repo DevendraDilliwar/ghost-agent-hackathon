@@ -1,4 +1,4 @@
-# NoMCP - The Universal Worker - Vision File
+# Ghost Agent - The Universal Worker - Vision File
 
 ## Core Idea
 **We kill the need for MCP / API integrations.**
@@ -8,7 +8,7 @@ Any legacy or modern software (Tally, Government Tax Portals, SAP, Legacy ERPs, 
 
 ## The 5 Meta Models Architecture
 
-| Role | Model | Function in NoMCP |
+| Role | Model | Function in Ghost Agent |
 |---|---|---|
 | **Eyes (UI Grounding)** | **SAM 3.1** | Segments buttons, text fields, tables, dropdowns, and active dialogs from raw desktop screenshots. |
 | **Brain (Planner)** | **Muse Spark** | High-level goal decomposition into sequential, atomic UI tasks; error recovery strategies. |
@@ -38,7 +38,7 @@ flowchart LR
 ---
 
 ## Form Factor & Packaging
-- **Target**: Universal Desktop App (`NoMCP.exe` / native tray app).
+- **Target**: Universal Desktop App (`ghost-agent` / native tray app).
 - **Core Capabilities**:
   - Global hotkeys (Start / Pause / Takeover / Emergency Stop).
   - Floating status pill & visual grounding overlay.

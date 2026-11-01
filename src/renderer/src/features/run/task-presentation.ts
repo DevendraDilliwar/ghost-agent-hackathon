@@ -1,7 +1,7 @@
 import type { AgentStatus, TaskSnapshot } from '../../../../shared/contracts/task';
 import type { RunRecord } from '../../../../shared/contracts/history';
 
-export type StatusTone = 'active' | 'done' | 'failed' | 'muted';
+type StatusTone = 'active' | 'done' | 'failed' | 'muted';
 
 export function statusTone(status: AgentStatus): StatusTone {
   if (status === 'completed') return 'done';

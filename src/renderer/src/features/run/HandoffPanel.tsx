@@ -1,4 +1,4 @@
-import { Hand } from 'lucide-react';
+import { ChevronDown, Hand } from 'lucide-react';
 import { useState } from 'react';
 import type { TaskRuntimeView } from './useTaskRuntime';
 import { Button } from '../../components/ui/button';
@@ -36,6 +36,7 @@ export function HandoffPanel({ runtime }: { runtime: TaskRuntimeView }) {
   const title = task.handoff.kind === 'verification' ? 'Complete verification yourself'
     : task.handoff.kind === 'login' ? 'Sign in yourself' : task.handoff.kind === 'clarification' ? 'One question before I continue' : 'Your turn at the desktop';
   const clarification = task.handoff.kind === 'clarification';
+  const firstQuestion = clarification ? task.handoff.questions?.[0] : undefined;
   const story = task.handoff.kind === 'manual' ? parseRecoveryStory(task.handoff.reason) : null;
   return (
     <section aria-labelledby="handoff-title" className="space-y-3 rounded-2xl border border-amber-300 bg-amber-50 p-5">
@@ -51,6 +52,21 @@ export function HandoffPanel({ runtime }: { runtime: TaskRuntimeView }) {
         </dl>
       ) : (
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{task.handoff.reason}</p>
+      )}
+      {firstQuestion && firstQuestion.options.length > 0 && (
+        <div>
+          <label htmlFor="suggestion-select" className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-amber-700">Suggested answers</label>
+          <div className="relative">
+            <select id="suggestion-select" disabled={runtime.pending}
+              value={firstQuestion.options.includes(answer) ? answer : ''}
+              onChange={event => setAnswer(event.target.value)}
+              className="w-full appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-900">
+              <option value="" disabled>Choose a suggestion…</option>
+              {firstQuestion.options.map((option, index) => <option key={option + index} value={option}>{option}</option>)}
+            </select>
+            <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          </div>
+        </div>
       )}
       <p className="text-xs leading-relaxed text-slate-500">Agent input, new screenshots, and new model requests are paused. {clarification ? 'Your answer will be sent to Meta when you resume. Do not enter passwords, verification codes, or other secrets here.' : 'Complete the step in the target app, then close any private content before returning control.'} The {task.maxMinutes}-minute run limit still applies.</p>
       {clarification && <label className="block text-xs text-slate-600">Your answer

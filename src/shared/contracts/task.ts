@@ -58,15 +58,23 @@ export interface RunConfiguration {
   resume?: { missionId: string };
 }
 
+export interface ClarificationQuestion {
+  readonly id: string;
+  readonly question: string;
+  readonly options: string[];
+}
+
 export interface UserHandoff {
   readonly kind: 'verification' | 'login' | 'clarification' | 'manual';
   readonly reason: string;
+  readonly questions?: ClarificationQuestion[];
 }
 
 export interface ParsedIntent {
   summary: string;
   params: Record<string, string>;
   missing: string[];
+  questions?: ClarificationQuestion[];
 }
 
 export interface TaskSnapshot {

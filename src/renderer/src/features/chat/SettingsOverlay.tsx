@@ -29,7 +29,7 @@ interface SettingsOverlayProps {
 type SettingsPage = 'Appearance' | 'Behavior' | 'Notifications' | 'Connection' | 'Data Controls';
 const settingsGroups = [
   { label: 'General', items: [{ label: 'Appearance', icon: Brush }, { label: 'Behavior', icon: SquareDashedMousePointer }, { label: 'Notifications', icon: Bell }] },
-  { label: 'Grok', items: [{ label: 'Connection', icon: SlidersHorizontal }] },
+  { label: 'Agent', items: [{ label: 'Connection', icon: SlidersHorizontal }] },
   { label: 'Data & Information', items: [{ label: 'Data Controls', icon: Database }] },
 ] as const;
 

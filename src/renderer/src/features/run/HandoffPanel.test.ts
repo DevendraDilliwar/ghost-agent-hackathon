@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseRecoveryStory } from './HandoffPanel';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { HandoffPanel, parseRecoveryStory } from './HandoffPanel';
+import type { TaskRuntimeView } from './useTaskRuntime';
 
 const full = 'Stuck on [gcp] phase "Deploy backend". Attempts: executed: Click the deploy button | executed: Click the deploy button. ' +
   'Observed: PRISM warning: No visual change detected on screen after action. Already tried: The last action caused no visible change. ' +
@@ -29,5 +32,22 @@ describe('parseRecoveryStory', () => {
     'Stuck. Attempts: foo.',
   ])('falls back to plain text for non-story reasons', reason => {
     expect(parseRecoveryStory(reason)).toBeNull();
+  });
+});
+
+describe('HandoffPanel questions', () => {
+  it('renders a suggested-answer dropdown for structured questions', () => {
+    const runtime = {
+      snapshot: {
+        runId: 'run-1', status: 'needs_user', maxMinutes: 5, pendingActionId: null, message: '',
+        handoff: { kind: 'clarification', reason: 'Where should I deploy?',
+          questions: [{ id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] }] },
+      },
+      pending: false,
+    } as unknown as TaskRuntimeView;
+    const html = renderToStaticMarkup(createElement(HandoffPanel, { runtime }));
+    expect(html).toContain('Suggested answers');
+    expect(html).toContain('Vercel');
+    expect(html).toContain('GCP');
   });
 });

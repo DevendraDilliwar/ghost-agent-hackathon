@@ -1,4 +1,4 @@
-import type { ParsedIntent } from '../../shared/contracts/task';
+import type { ClarificationQuestion, ParsedIntent } from '../../shared/contracts/task';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Meta returned an invalid intent response.');
@@ -38,7 +38,7 @@ export function parseIntentResponse(value: unknown): { intent: ParsedIntent; inp
   catch { throw new Error('Meta did not return intent as JSON. No desktop action was taken. Try again.'); }
   const intent = record(parsed);
   for (const key of Object.keys(intent)) {
-    if (!['summary', 'params', 'missing'].includes(key)) throw new Error('Meta returned an unsupported intent field. No desktop action was taken.');
+    if (!['summary', 'params', 'missing', 'questions'].includes(key)) throw new Error('Meta returned an unsupported intent field. No desktop action was taken.');
   }
   const summary = boundedText(intent.summary, 500, 'summary');
   const paramsSource = record(intent.params);
@@ -56,5 +56,27 @@ export function parseIntentResponse(value: unknown): { intent: ParsedIntent; inp
   if (!Array.isArray(intent.missing)) throw new Error('Meta returned an invalid intent response. No desktop action was taken.');
   if (intent.missing.length > 20) throw new Error('Meta returned too many missing values. No desktop action was taken.');
   const missing = intent.missing.map(item => boundedText(item, 200, 'missing value'));
-  return { intent: { summary, params, missing }, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+  let questions: ClarificationQuestion[] | undefined;
+  if (intent.questions !== undefined) {
+    if (!Array.isArray(intent.questions) || intent.questions.length > 3) {
+      throw new Error('Meta returned an invalid intent question list. No desktop action was taken.');
+    }
+    questions = intent.questions.map(item => {
+      const entry = record(item);
+      for (const key of Object.keys(entry)) {
+        if (!['id', 'question', 'options'].includes(key)) throw new Error('Meta returned an unsupported intent question field. No desktop action was taken.');
+      }
+      const id = boundedText(entry.id, 32, 'question id');
+      const question = boundedText(entry.question, 300, 'question');
+      if (!Array.isArray(entry.options) || entry.options.length > 4) {
+        throw new Error('Meta returned an invalid intent option list. No desktop action was taken.');
+      }
+      const options = entry.options.map(option => boundedText(option, 100, 'question option'));
+      return { id, question, options };
+    });
+  }
+  return {
+    intent: { summary, params, missing, ...(questions === undefined ? {} : { questions }) },
+    inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
+  };
 }

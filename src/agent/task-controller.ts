@@ -407,9 +407,16 @@ export class TaskController {
       return false;
     }
     if (decision.intent.missing.length) {
+      const first = decision.intent.questions?.[0];
+      const options = first?.options.filter(option => option.trim()).slice(0, 4) ?? [];
       this.yieldToUser({
         kind: 'clarification',
-        reason: ('Before I touch the desktop, I need: ' + decision.intent.missing.join(', ') + '. Reply with the missing values.').slice(0, 1000),
+        reason: (first && first.question.trim()
+          ? first.question
+          : 'Before I touch the desktop, I need: ' + decision.intent.missing.join(', ') + '. Reply with the missing values.').slice(0, 1000),
+        ...(first && first.question.trim() && options.length
+          ? { questions: [{ id: first.id.slice(0, 32), question: first.question.slice(0, 300), options: options.map(option => option.slice(0, 100)) }] }
+          : {}),
       });
       return false;
     }

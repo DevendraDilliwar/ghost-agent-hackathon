@@ -18,7 +18,7 @@ export function AgentStatusBubble({ runtime }: { runtime: TaskRuntimeView }) {
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-slate-800">NoMCP Agent</span>
+          <span className="text-xs font-bold text-slate-800">Ghost Agent</span>
           <span className="text-[11px] font-medium text-slate-500">· {statusLabels[task.status]}</span>
         </div>
       </div>

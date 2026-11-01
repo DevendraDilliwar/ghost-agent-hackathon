@@ -63,4 +63,29 @@ describe('parseIntentResponse', () => {
   it('rejects invalid token usage', () => {
     expect(() => parseIntentResponse(envelope(valid, { input_tokens: -1, output_tokens: 12 }))).toThrow('valid token usage');
   });
+
+  it('parses clarification questions with options', () => {
+    const text = JSON.stringify({ summary: 'Deploy it', params: {}, missing: ['target'],
+      questions: [{ id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] }] });
+    const result = parseIntentResponse(envelope(text));
+    expect(result.intent.questions).toEqual([{ id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] }]);
+  });
+
+  it('omits questions when the model sends none', () => {
+    const result = parseIntentResponse(envelope(valid));
+    expect('questions' in result.intent).toBe(false);
+  });
+
+  it('rejects more than 3 questions', () => {
+    const questions = [1, 2, 3, 4].map(n => ({ id: 'q' + n, question: 'Q' + n, options: ['A'] }));
+    const text = JSON.stringify({ summary: 'Do it', params: {}, missing: ['x'], questions });
+    expect(() => parseIntentResponse(envelope(text))).toThrow('invalid intent question list');
+  });
+
+  it('rejects bad options and unknown question fields', () => {
+    const empty = JSON.stringify({ summary: 'Do it', params: {}, missing: ['x'], questions: [{ id: 'q1', question: 'Q?', options: [''] }] });
+    expect(() => parseIntentResponse(envelope(empty))).toThrow('invalid intent question option');
+    const extra = JSON.stringify({ summary: 'Do it', params: {}, missing: ['x'], questions: [{ id: 'q1', question: 'Q?', options: ['A'], hint: 'x' }] });
+    expect(() => parseIntentResponse(envelope(extra))).toThrow('unsupported intent question field');
+  });
 });

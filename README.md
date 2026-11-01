@@ -1,9 +1,9 @@
-# NoMCP — The Universal Worker
+# Ghost Agent — The Universal Worker
 
 > **Meta Global AI Developer Hackathon 2026**  
 > **Tagline:** *Zero per-app APIs. Zero MCPs. Zero Connectors. Pure Vision.*
 
-NoMCP removes per-app API integrations and MCP servers: instead of connectors, an AI agent **SEEs** the screen and uses mouse and keyboard like a human. The tested demo is a Tally-style voucher-entry fixture on Ubuntu/X11 (see the demo script below); broader app coverage is future work.
+Ghost Agent removes per-app API integrations and MCP servers: instead of connectors, an AI agent **SEEs** the screen and uses mouse and keyboard like a human. The tested demo is a Tally-style voucher-entry fixture on Ubuntu/X11 (see the demo script below); broader app coverage is future work.
 
 ---
 
@@ -19,7 +19,7 @@ flowchart LR
     B -->|Done| E[User confirms]
 ```
 
-| Role | Implementation | Function in NoMCP |
+| Role | Implementation | Function in Ghost Agent |
 |---|---|---|
 | **Observe** | Screenshot capture | Fresh screenshot of the selected desktop before every step. |
 | **Think** | Meta model, intent prompt | Goal text becomes structured params; missing values trigger a question, never a guess. |
@@ -35,7 +35,7 @@ A UI-tag grounding seam exists for a future detector; it currently returns zero 
 
 1. **🎙️ Multilingual Voice First (Hindi & English):**
    - Speak naturally in Hindi (*"Tally me 50,000 ka invoice generate karo"*) or English.
-   - Built-in Web Speech API with real-time sound wave visualizer.
+   - Built-in Web Speech API with microphone status feedback.
 
 2. **👁️ Live Screen Overlay:**
    - Screenshot view with a pulsing target crosshair over the pending action coordinates.
@@ -51,7 +51,7 @@ A UI-tag grounding seam exists for a future detector; it currently returns zero 
 
 5. **📦 Universal Desktop Packaging:**
    - Built with Electron, React, and TypeScript.
-   - Packageable as a standalone Windows executable (`NoMCP.exe`) and Linux AppImage/tar.gz.
+   - Packageable as a standalone Windows executable (`ghost-agent`) and Linux AppImage/tar.gz.
 
 ---
 
@@ -59,8 +59,8 @@ A UI-tag grounding seam exists for a future detector; it currently returns zero 
 
 ### Installation & Run
 ```bash
-# 1. Install dependencies
-npm ci
+# 1. Install dependencies (pnpm only — npm install creates a conflicting lockfile)
+pnpm install
 
 # 2. Run developer desktop app
 npm run dev
@@ -82,7 +82,7 @@ npm run check
 
 ## 📖 Documentation Index
 
-- [Vision File (`NoMCP_Vision_For_Agent.md`)](NoMCP_Vision_For_Agent.md) — Core philosophy & 5 Meta Models breakdown.
+- [Vision File (`Ghost_Vision_For_Agent.md`)](docs/Ghost_Vision_For_Agent.md) — Core philosophy & 5 Meta Models breakdown.
 - [2-Minute Pitch & Demo Script (`DEMO_PITCH_SCRIPT.md`)](DEMO_PITCH_SCRIPT.md) — Word-for-word voiceover script and video recording guide.
 - [Tally demo script (`demo/legacy-accounting/DEMO_SCRIPT.md`)](demo/legacy-accounting/DEMO_SCRIPT.md) — Frozen task, reset steps, evidence checklist, and shot list.
 - [Architecture & Boundaries (`docs/ARCHITECTURE.md`)](docs/ARCHITECTURE.md) — Process isolation, restricted IPC, and security gates.

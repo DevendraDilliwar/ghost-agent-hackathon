@@ -113,17 +113,17 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
           <button type="button" aria-label="New chat" title="New chat" onClick={newChat} disabled={active || runtime.pending}><SquarePen /><span>New chat</span></button>
           <button type="button" className="navigation-rail-only" aria-label="Search conversations" title="Search conversations" onClick={() => { setSidebarOpen(true); setSearchOpen(true); }}><Search /></button>
           <button type="button" aria-label="Library" title="Library" aria-pressed={showMissions} onClick={() => { setShowMissions(value => !value); closeMobileSidebar(); }}><LayoutGrid /><span>Library</span></button>
-          <button type="button" className="navigation-customise" aria-label="Customise" title="Customise" disabled={active} onClick={openSetup}><Hexagon /><span>Customise</span></button>
+          <button type="button" className="navigation-settings" aria-label="Settings" title="Settings" disabled={active} onClick={openSetup}><Hexagon /><span>Settings</span></button>
         </nav>
         <TaskHistoryList runs={summaries} activeRunId={task?.runId ?? null} selectedRunId={viewingId} search={search} onSelect={selectRun} />
         <div className="navigation-account">
-          <span className="account-avatar reference-avatar" role="img" aria-label="Devendra Dilliwar">D</span>
-          <div><span>Devendra Dilliwar</span></div>
+          <span className="account-avatar reference-avatar" role="img" aria-label="Local session">G</span>
+          <div><span>Local session</span></div>
           <button type="button" className="chat-icon-button" disabled={active} onClick={openSetup} aria-label="Open settings" title="Open settings"><Settings /></button>
         </div>
       </aside>
 
-      <section className="chat-main" aria-label="NoMCP chat">
+      <section className="chat-main" aria-label="Ghost Agent chat">
         <header className="chat-topbar">
           <div className="chat-topbar-left">{showMissions && <span className="chat-topbar-title">Library</span>}</div>
           <div className="chat-topbar-actions">

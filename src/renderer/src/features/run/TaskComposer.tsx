@@ -57,7 +57,7 @@ declare global {
 }
 
 export function TaskComposer({
-  displayName = 'NoMCP',
+  displayName = 'Ghost Agent',
   connected,
   modelReady,
   ready,

@@ -378,6 +378,22 @@ describe('task lifecycle', () => {
     expect(model.decide).not.toHaveBeenCalled();
   });
 
+  it('asks the first model question with tappable options before touching the desktop', async () => {
+    const { controller, desktop, model } = setup();
+    model.parseIntent.mockResolvedValueOnce({ intent: { summary: 'Deploy it', params: {}, missing: ['target'], questions: [
+      { id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] },
+      { id: 'q2', question: 'Which repo?', options: [] },
+    ] }, inputTokens: 10, outputTokens: 5 });
+    controller.start(configuration);
+    await flush();
+    const handoff = controller.getSnapshot().handoff;
+    expect(controller.getSnapshot().status).toBe('needs_user');
+    expect(handoff?.kind).toBe('clarification');
+    expect(handoff?.reason).toBe('Where should I deploy?');
+    expect(handoff?.questions).toEqual([{ id: 'q1', question: 'Where should I deploy?', options: ['Vercel', 'GCP'] }]);
+    expect(desktop.capture).not.toHaveBeenCalled();
+  });
+
   it('re-parses with the clarification answer and then observes', async () => {
     const { controller, desktop, model } = setup();
     model.parseIntent.mockResolvedValueOnce({ intent: { summary: 'Enter the voucher', params: {}, missing: ['amount'] }, inputTokens: 10, outputTokens: 5 });

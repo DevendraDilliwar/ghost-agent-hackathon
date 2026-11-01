@@ -35,7 +35,7 @@ export function MiniFloatingPopCard({
           <div className="flex h-5 w-5 items-center justify-center rounded-lg bg-slate-900 text-white">
             <Sparkles className="h-3 w-3 animate-spin" style={{ animationDuration: '8s' }} />
           </div>
-          <span className="text-xs font-bold tracking-tight text-slate-900">NoMCP HUD</span>
+          <span className="text-xs font-bold tracking-tight text-slate-900">Ghost HUD</span>
         </div>
 
         <span
