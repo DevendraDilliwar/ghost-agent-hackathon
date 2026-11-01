@@ -148,6 +148,28 @@ describe('Meta computer-use adapter', () => {
     expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: 'x'.repeat(2001) }) }] }, frame)).toThrow('invalid shell call');
   });
 
+  it('flags malformed tool calls for a controller retry but not limit or filter stops', () => {
+    for (const bad of [{ ...response, output: [{ type: 'function_call', name: 'run_shell', arguments: '{' }] }, { ...response, output: 'not-a-list' }]) {
+      try {
+        parseMetaDecision(bad, frame);
+        expect.unreachable('expected a malformed error');
+      } catch (error) {
+        expect((error as { malformedModelOutput?: unknown }).malformedModelOutput).toBe(true);
+      }
+    }
+    for (const fatal of [
+      { ...response, status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } },
+      { ...response, status: 'incomplete', incomplete_details: { reason: 'content_filter' } },
+    ]) {
+      try {
+        parseMetaDecision(fatal, frame);
+        expect.unreachable('expected a fatal error');
+      } catch (error) {
+        expect((error as { malformedModelOutput?: unknown }).malformedModelOutput).toBeUndefined();
+      }
+    }
+  });
+
   it('holds desktop actions unvalidated when no screenshot is available yet', () => {
     const decision = parseMetaDecision(response, undefined);
     expect(decision.action).toBeNull();

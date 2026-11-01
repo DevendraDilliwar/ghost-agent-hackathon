@@ -1,5 +1,5 @@
 import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
-import type { CheckpointPort, DesktopPort, ModelPort, ShellPort, VerifyDecision } from './ports';
+import type { CheckpointPort, DesktopPort, ModelDecision, ModelPort, ShellPort, VerifyDecision } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
@@ -46,6 +46,10 @@ export function idleSnapshot(): TaskSnapshot {
   };
 }
 
+function isMalformedOutput(error: unknown): boolean {
+  return error instanceof Error && (error as { malformedModelOutput?: unknown }).malformedModelOutput === true;
+}
+
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -64,6 +68,7 @@ export class TaskController {
   private now: () => number;
   private clarifications: string[] = [];
   private noProgressStreak = 0;
+  private malformedStreak = 0;
   /** Consecutive stall handoffs without progress. Survives resume so a stuck run fails instead of looping forever. */
   private stallCycles = 0;
   /** Think-time of the latest decide(), paired with the next verification for timing. */
@@ -446,12 +451,26 @@ export class TaskController {
       history.unshift('Current phase [' + phase.domain + ']: ' + phase.goal);
     }
     const decideStart = this.now();
-    const decision = await this.dependencies.model.decide({
+    const decideInput = {
       goal: this.state.goal, history, signal,
       ...(observation ? { observation } : {}),
       ...(grounding?.elements.length ? { grounding } : {}),
-    });
+    };
+    let decision: ModelDecision;
+    try {
+      decision = await this.dependencies.model.decide(decideInput);
+    } catch (error) {
+      if (!this.current(generation, signal)) return;
+      if (!isMalformedOutput(error) || this.malformedStreak >= 1) throw error;
+      // One malformed tool call: show the model its mistake and let it answer again.
+      this.malformedStreak += 1;
+      const detail = error instanceof Error ? error.message : String(error);
+      history.push('Your last response was malformed (' + detail.slice(0, 300) + '). Reply again with a correctly formatted tool call — do not repeat the broken output.');
+      decision = await this.dependencies.model.decide(decideInput);
+      if (!this.current(generation, signal)) return;
+    }
     if (!this.current(generation, signal)) return;
+    this.malformedStreak = 0;
     this.lastDecideMs = this.now() - decideStart;
     this.noteStepTag(decision.message);
     const inputTokens = this.state.inputTokens + decision.inputTokens;

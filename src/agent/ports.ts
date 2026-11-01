@@ -76,6 +76,12 @@ export interface CheckpointPort {
 }
 
 export interface ModelPort {
+  /**
+   * Asks the model for the next step. Implementations SHOULD flag malformed
+   * model output (bad tool-call shape — not transport/auth/limit failures)
+   * with `malformedModelOutput: true` on the thrown error, so the controller
+   * retries once with correction guidance instead of failing the run.
+   */
   decide(input: {
     goal: string;
     /** Absent after a terminal command: the model decides from text output, no screenshot. */

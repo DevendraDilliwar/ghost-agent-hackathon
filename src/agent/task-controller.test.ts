@@ -718,6 +718,33 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().handoff?.reason).toContain('judge did not answer');
   });
 
+  it('retries once with correction guidance when the model sends a malformed tool call', async () => {
+    const { controller, model } = setup();
+    const malformed = Object.assign(new Error('Meta returned an invalid shell call.'), { malformedModelOutput: true });
+    model.decide.mockRejectedValueOnce(malformed).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(model.decide).toHaveBeenCalledTimes(2);
+    expect(model.decide.mock.calls[1]?.[0].history.join('\n')).toContain('malformed (Meta returned an invalid shell call.)');
+  });
+
+  it('fails honestly when the model sends malformed tool calls twice', async () => {
+    const { controller, model } = setup();
+    model.decide.mockRejectedValue(Object.assign(new Error('Meta returned an invalid shell call.'), { malformedModelOutput: true }));
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.decide).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot().message).toContain('invalid shell call');
+  });
+
+  it('fails fast on decide errors that are not malformed output', async () => {
+    const { controller, model } = setup();
+    model.decide.mockRejectedValue(new Error('Meta authentication failed.'));
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.decide).toHaveBeenCalledTimes(1);
+  });
+
   it('tells the model what the last step did before the next decision', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
