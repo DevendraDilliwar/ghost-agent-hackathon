@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TaskController } from './task-controller';
+import { UIGroundingEngine } from './vision/ui-grounding';
 import type { JournalEvent, JournalSink } from '../shared/contracts/journal';
 import type { MissionMeta, PhaseCheckpoint } from '../shared/contracts/mission';
 import type { CheckpointPort, ModelDecision } from './ports';
@@ -576,11 +577,46 @@ describe('task lifecycle', () => {
       }],
       totalElements: 1, processedAt: 0,
     };
-    const { controller, model } = setup({ grounding: { groundScreen: async () => detected } });
+    const snapper = new UIGroundingEngine();
+    const { controller, model } = setup({ grounding: { groundScreen: async () => detected, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
     controller.start(configuration);
     await flush();
     expect(model.decide.mock.calls[0]?.[0].grounding).toBe(detected);
     expect(controller.getSnapshot().groundedElements).toEqual(detected.elements);
+  });
+
+  it('snaps near-miss clicks to grounded element centers', async () => {
+    const detected = {
+      elements: [{
+        id: 1, type: 'button' as const, label: 'Save',
+        bounds: { x: 100, y: 200, width: 140, height: 36 },
+        center: { x: 170, y: 218 }, confidence: 0.9,
+      }],
+      totalElements: 1, processedAt: 0,
+    };
+    const snapper = new UIGroundingEngine();
+    const { controller, desktop, model } = setup({ grounding: { groundScreen: async () => detected, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 105, y: 205, button: 'left' } }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(desktop.execute.mock.calls[0]?.[0]).toMatchObject({ x: 170, y: 218 });
+  });
+
+  it('leaves clicks far from any element untouched', async () => {
+    const detected = {
+      elements: [{
+        id: 1, type: 'button' as const, label: 'Save',
+        bounds: { x: 100, y: 200, width: 140, height: 36 },
+        center: { x: 170, y: 218 }, confidence: 0.9,
+      }],
+      totalElements: 1, processedAt: 0,
+    };
+    const snapper = new UIGroundingEngine();
+    const { controller, desktop, model } = setup({ grounding: { groundScreen: async () => detected, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 700, y: 500, button: 'left' } }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+    expect(desktop.execute.mock.calls[0]?.[0]).toMatchObject({ x: 700, y: 500 });
   });
 
   it('parses intent before the first capture and waits for it', async () => {

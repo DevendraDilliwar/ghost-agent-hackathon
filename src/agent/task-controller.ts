@@ -21,7 +21,7 @@ interface BatchExecution {
 export interface ControllerDependencies {
   desktop: DesktopPort;
   model: ModelPort;
-  grounding?: Pick<UIGroundingEngine, 'groundScreen'>;
+  grounding?: Pick<UIGroundingEngine, 'groundScreen' | 'snapToNearestElement'>;
   recovery?: Pick<ErrorLoop, 'decide' | 'story'>;
   checkpoints?: CheckpointPort;
   journal?: JournalSink;
@@ -523,6 +523,15 @@ export class TaskController {
         this.fail('Meta returned an action outside the fresh screenshot. No input was dispatched.');
         return;
       }
+    }
+    const elements = grounding?.elements ?? [];
+    if (elements.length) {
+      // Near-miss clicks land on the real control instead of its edge pixels.
+      planned = planned.map(item => {
+        if (item.type !== 'click' && item.type !== 'double_click') return item;
+        const snapped = engine.snapToNearestElement(item.x, item.y, elements);
+        return snapped.x === item.x && snapped.y === item.y ? item : { ...item, x: snapped.x, y: snapped.y };
+      });
     }
     const room = this.state.maxSteps - this.state.actions.filter(item => item.status === 'executed').length;
     if (room <= 0) {
