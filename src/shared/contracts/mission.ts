@@ -71,6 +71,8 @@ export interface PhaseCheckpoint {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly noProgressStreak: number;
+  /** Consecutive stall handoffs without progress. Absent in checkpoints written before the stall cap. */
+  readonly stallCycles?: number;
   readonly savedAt: number;
 }
 

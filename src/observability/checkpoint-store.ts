@@ -167,11 +167,15 @@ function validCheckpoint(value: unknown, missionId: string, phaseId: string): Ph
   for (const key of ['inputTokens', 'outputTokens', 'noProgressStreak', 'savedAt'] as const) {
     if (typeof data[key] !== 'number' || !Number.isSafeInteger(data[key]) || (data[key] as number) < 0) return null;
   }
+  // Stall-cycle counter: absent in checkpoints written before the cap, so default to 0.
+  if (data.stallCycles !== undefined &&
+    (typeof data.stallCycles !== 'number' || !Number.isSafeInteger(data.stallCycles) || data.stallCycles < 0)) return null;
+  const stallCycles = data.stallCycles === undefined ? 0 : (data.stallCycles as number);
   return {
     missionId, phaseId, order: data.order, domain: data.domain as DomainId, status: data.status as PhaseStatus,
     goal: data.goal, notes, steps, success: data.success, intent, clarifications, executedDescs,
     lastVerification: data.lastVerification as string | null,
     inputTokens: data.inputTokens as number, outputTokens: data.outputTokens as number,
-    noProgressStreak: data.noProgressStreak as number, savedAt: data.savedAt as number,
+    noProgressStreak: data.noProgressStreak as number, stallCycles, savedAt: data.savedAt as number,
   };
 }

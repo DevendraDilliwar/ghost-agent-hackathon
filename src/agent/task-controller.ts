@@ -45,6 +45,8 @@ export class TaskController {
   private now: () => number;
   private clarifications: string[] = [];
   private noProgressStreak = 0;
+  /** Consecutive stall handoffs without progress. Survives resume so a stuck run fails instead of looping forever. */
+  private stallCycles = 0;
   private approvalMode: ApprovalMode = 'full_access';
   private mission: MissionMemory | null = null;
   private missionId: string | null = null;
@@ -73,6 +75,7 @@ export class TaskController {
     this.clarifications = [];
     this.resumedHistory = [];
     this.noProgressStreak = 0;
+    this.stallCycles = 0;
     this.lastGuidance = null;
     this.unmetStreak = 0;
     this.unmetNote = null;
@@ -268,6 +271,7 @@ export class TaskController {
         this.persistPhase();
         if (progressed) {
           this.noProgressStreak = 0;
+          this.stallCycles = 0;
           this.lastGuidance = null;
         } else {
           const recovery = (this.dependencies.recovery ?? defaultErrorLoop).decide({
@@ -285,6 +289,7 @@ export class TaskController {
             this.lastGuidance = recovery.guidance;
             progressNote = recovery.guidance;
           } else {
+            if (this.cappedStall(recovery.reason)) return;
             this.record('stall', 'stalled', recovery.reason.slice(0, 200));
             this.yieldToUser({ kind: 'manual', reason: recovery.reason });
             return;
@@ -518,6 +523,7 @@ export class TaskController {
     this.pendingResume = null;
     this.clarifications = [...resumed.clarifications];
     this.noProgressStreak = resumed.noProgressStreak;
+    this.stallCycles = resumed.stallCycles ?? 0;
     this.resumedHistory = [...resumed.executedDescs,
       ...(resumed.lastVerification ? ['Last step result: ' + resumed.lastVerification] : [])];
     this.state = {
@@ -549,19 +555,22 @@ export class TaskController {
     }
     if (check.confirmed) {
       this.unmetStreak = 0;
+      this.stallCycles = 0;
       this.record('verify', 'success', 'Phase success confirmed: ' + phase.success);
       return true;
     }
     this.record('verify', 'failure', 'Phase success not met: ' + check.detail);
     if (++this.unmetStreak >= 2) {
       const recovery = this.dependencies.recovery ?? defaultErrorLoop;
-      this.yieldToUser({ kind: 'manual', reason: recovery.story({
+      const reason = recovery.story({
         phase: this.phaseContext(),
         recentAttempts: this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
           .map(action => action.status + ': ' + action.description),
         verificationSummary: 'Phase success not met: ' + check.detail,
         priorGuidance: this.lastGuidance,
-      }) });
+      });
+      if (this.cappedStall(reason)) return false;
+      this.yieldToUser({ kind: 'manual', reason });
       return false;
     }
     this.unmetNote = 'Phase success not met (' + check.detail.slice(0, 200) + '). The phase is not done - keep working towards: ' + phase.success;
@@ -609,7 +618,7 @@ export class TaskController {
             .map(action => action.status + ': ' + action.description)].slice(-60),
         lastVerification: this.state.actions.at(-1)?.verification?.summary ?? this.resumedHistory.at(-1) ?? null,
         inputTokens: this.state.inputTokens, outputTokens: this.state.outputTokens,
-        noProgressStreak: this.noProgressStreak, savedAt: Date.now(),
+        noProgressStreak: this.noProgressStreak, stallCycles: this.stallCycles, savedAt: Date.now(),
       };
       void store.save(checkpoint).catch(() => undefined);
     } catch {
@@ -658,6 +667,18 @@ export class TaskController {
     const pendingId = this.state.pendingActionId;
     this.pending = null;
     this.state = { ...this.state, pendingActionId: null, actions: this.state.actions.map(action => action.id === pendingId ? { ...action, status } : action) };
+  }
+
+  /**
+   * Counts a stall handoff without progress. Fails the run on the third
+   * consecutive cycle so escalate-resume-retry can never loop forever.
+   * True when the run was failed.
+   */
+  private cappedStall(reason: string): boolean {
+    if (++this.stallCycles < 3) return false;
+    this.fail(('Stopped after 3 stalls with no progress even after resume. Last wall: ' + reason.slice(0, 400) +
+      ' Fix the screen, then start a new run from the kept goal.').slice(0, 1000));
+    return true;
   }
 
   private fail(message: string): void {

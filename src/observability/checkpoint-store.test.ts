@@ -11,7 +11,7 @@ function checkpoint(overrides?: Partial<PhaseCheckpoint>): PhaseCheckpoint {
     status: 'active', notes: ['project: acme-prod'], steps: ['Create the service'], success: 'Service URL serves traffic',
     intent: { summary: 'Deploy', params: {}, missing: [] },
     clarifications: [], executedDescs: ['executed: Click the deploy button'], lastVerification: 'PRISM verified',
-    inputTokens: 100, outputTokens: 20, noProgressStreak: 0, savedAt: 1_700_000_000_000,
+    inputTokens: 100, outputTokens: 20, noProgressStreak: 0, stallCycles: 0, savedAt: 1_700_000_000_000,
     ...overrides,
   };
 }
@@ -80,5 +80,16 @@ describe('CheckpointStore', () => {
     const raw = JSON.parse(await readFile(join(directory, 'm-1', 'checkpoints', 'phase-1.json'), 'utf8'));
     expect(raw.status).toBe('failed');
     expect(raw.executedDescs).toEqual(['executed: Click the deploy button']);
+  });
+
+  it('defaults the stall-cycle counter to zero for legacy checkpoints', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'nomcp-missions-'));
+    const store = new CheckpointStore(directory);
+    await store.save(checkpoint({}));
+    const file = join(directory, 'm-1', 'checkpoints', 'phase-1.json');
+    const raw = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+    delete raw.stallCycles;
+    await writeFile(file, JSON.stringify(raw));
+    expect((await store.load('m-1', 'phase-1'))?.stallCycles).toBe(0);
   });
 });

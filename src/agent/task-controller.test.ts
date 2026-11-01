@@ -676,6 +676,18 @@ describe('self-fix error loop', () => {
     expect(snapshot.handoff?.reason).toContain('Take control of the desktop');
   });
 
+  it('fails the run after three stall handoffs without progress', async () => {
+    const { controller } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    controller.resume(controller.getSnapshot().runId!);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    controller.resume(controller.getSnapshot().runId!);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(controller.getSnapshot().message).toContain('3 stalls');
+    expect(controller.getSnapshot().handoff).toBeNull();
+  });
+
   it('keeps a stopped phase open until its success condition is confirmed', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue(finished);
@@ -700,6 +712,19 @@ describe('self-fix error loop', () => {
     expect(handoff?.kind).toBe('manual');
     expect(handoff?.reason).toContain('Phase success not met: Blank page.');
     expect(handoff?.reason).toContain('Take control of the desktop');
+  });
+
+  it('fails the run after repeated unmet-success handoffs without progress', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue(finished);
+    model.verifySuccess.mockResolvedValue({ confirmed: false, detail: 'Blank page.', inputTokens: 5, outputTokens: 2 });
+    controller.start(configuration);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    controller.resume(controller.getSnapshot().runId!);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    controller.resume(controller.getSnapshot().runId!);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(controller.getSnapshot().message).toContain('3 stalls');
   });
 
   it('skips the success check for phases without a success condition', async () => {
