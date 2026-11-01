@@ -2,6 +2,7 @@ import type { RunConfiguration, TaskSnapshot } from './task';
 import type { RuntimeReadiness } from './desktop';
 import type { ModelConnectionInfo } from './model';
 import type { MissionSummary } from './mission';
+import type { RunRecord, RunSummary } from './history';
 
 export type DesktopSession = 'x11' | 'wayland' | 'unknown';
 
@@ -28,5 +29,7 @@ export interface DesktopBridge {
   reviewAction(runId: string, actionId: string, approve: boolean): Promise<TaskSnapshot>;
   confirmCompletion(runId: string, verified: boolean): Promise<TaskSnapshot>;
   listMissions(): Promise<MissionSummary[]>;
+  listRuns(): Promise<RunSummary[]>;
+  getRun(runId: string): Promise<RunRecord | null>;
   onTaskChanged(listener: (snapshot: TaskSnapshot) => void): () => void;
 }

@@ -1,4 +1,26 @@
-import type { AgentStatus } from '../../../../shared/contracts/task';
+import type { AgentStatus, TaskSnapshot } from '../../../../shared/contracts/task';
+import type { RunRecord } from '../../../../shared/contracts/history';
+
+export type StatusTone = 'active' | 'done' | 'failed' | 'muted';
+
+export function statusTone(status: AgentStatus): StatusTone {
+  if (status === 'completed') return 'done';
+  if (status === 'failed') return 'failed';
+  if (status === 'idle' || status === 'stopped') return 'muted';
+  return 'active';
+}
+
+/** Shape a stored run as a view-only snapshot for the thread UI. */
+export function toViewSnapshot(record: RunRecord): TaskSnapshot {
+  return {
+    runId: record.runId, revision: 0, status: record.status,
+    goal: record.goal || 'Untitled task', maxSteps: record.maxSteps, maxMinutes: record.maxMinutes,
+    actions: [...record.actions], messages: [...record.messages],
+    screenshot: null, pendingActionId: null, message: record.message,
+    awaitingCompletion: false, handoff: null, inputTokens: record.inputTokens, outputTokens: record.outputTokens,
+    intent: null, mission: record.mission,
+  };
+}
 
 export const statusLabels: Record<AgentStatus, string> = {
   idle: 'Ready for a task', preparing: 'Checking your desktop', observing: 'Looking at the screen',

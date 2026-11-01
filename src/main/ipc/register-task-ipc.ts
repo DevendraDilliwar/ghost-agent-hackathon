@@ -41,6 +41,8 @@ export function registerTaskIpc(window: BrowserWindow, rendererUrl: string, runt
     return runtime.controller.confirm(readRunId(args[0]), args[1]);
   });
   handle(IPC_CHANNELS.listMissions, 0, () => runtime.listMissions());
+  handle(IPC_CHANNELS.listRuns, 0, () => runtime.listRuns());
+  handle(IPC_CHANNELS.getRun, 1, args => runtime.loadRun(readRunId(args[0])));
   return () => {
     for (const channel of channels) ipcMain.removeHandler(channel);
   };

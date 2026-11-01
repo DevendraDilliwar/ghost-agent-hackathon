@@ -198,7 +198,6 @@ export function TaskComposer({
           disabled={busy}
           placeholder={isListening ? 'Listening…' : `Ask ${displayName}`}
         />
-        <button type="button" className="composer-mode" onClick={onOpenSetup} aria-label="Configure agent mode" title="Configure agent mode"><span>{displayName} <span className="mode-label">{approvalMode === 'full_access' ? 'Auto' : 'Review'}</span></span><ChevronDown size={16} /></button>
         <button type="button" className={`chat-icon-button ${isListening ? 'voice-active' : ''}`} onClick={toggleVoice} disabled={busy} aria-label={isListening ? 'Stop listening' : 'Speak task using microphone'} aria-pressed={isListening}>{isListening ? <MicOff /> : <Mic />}</button>
         {goal.trim() && <button type="submit" disabled={!canSubmit} title={submitLabel} aria-label={submitLabel} className="composer-send"><ArrowUp size={19} /></button>}
       </div>

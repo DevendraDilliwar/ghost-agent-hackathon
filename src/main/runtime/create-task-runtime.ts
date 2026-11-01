@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import os from 'node:os';
 import { FileJournal } from '../../observability/journal';
 import { CheckpointStore } from '../../observability/checkpoint-store';
+import { RunHistoryStore, toRunRecord } from '../../observability/run-history-store';
+import type { RunRecord, RunSummary } from '../../shared/contracts/history';
 import type { MissionSummary } from '../../shared/contracts/mission';
 import { TaskController } from '../../agent/task-controller';
 import { UbuntuDesktop } from '../../desktop/linux/ubuntu-desktop';
@@ -40,6 +42,14 @@ function missionsDirectory(): string {
     return join(app.getPath('userData'), 'nomcp-missions');
   } catch {
     return join(os.tmpdir(), 'nomcp-missions');
+  }
+}
+
+function historyDirectory(): string {
+  try {
+    return join(app.getPath('userData'), 'nomcp-history');
+  } catch {
+    return join(os.tmpdir(), 'nomcp-history');
   }
 }
 
@@ -84,6 +94,7 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   let disposed = false;
   const journal = new FileJournal(journalDirectory());
   const checkpoints = new CheckpointStore(missionsDirectory());
+  const history = new RunHistoryStore(historyDirectory());
   const controller = new TaskController({
     checkpoints,
     journal,
@@ -100,6 +111,10 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     changed: snapshot => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(IPC_CHANNELS.taskChanged, snapshot);
       if (!controls.isDestroyed() && !controls.webContents.isDestroyed()) controls.webContents.send(IPC_CHANNELS.controlsChanged, controlsSnapshot(snapshot, shortcut?.label ?? null));
+      if (snapshot.runId) {
+        const record = toRunRecord(snapshot);
+        if (record) void history.saveRun(record).catch(() => undefined);
+      }
     },
   });
   function ensureEmergencyStop(): boolean {
@@ -135,6 +150,12 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     },
     listMissions(): Promise<MissionSummary[]> {
       return checkpoints.listMissions();
+    },
+    listRuns(): Promise<RunSummary[]> {
+      return history.listRuns();
+    },
+    loadRun(runId: string): Promise<RunRecord | null> {
+      return history.loadRun(runId);
     },
     async testConnection(candidate: unknown) {
       if (!['idle', 'completed', 'stopped', 'failed'].includes(controller.getSnapshot().status)) throw new Error('Stop the current task before changing the model connection.');

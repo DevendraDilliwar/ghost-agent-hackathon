@@ -30,6 +30,8 @@ export function useTaskRuntime() {
   }, [bridge]);
 
   const listMissions = useCallback(() => bridge?.listMissions() ?? Promise.resolve([]), [bridge]);
+  const listRuns = useCallback(() => bridge?.listRuns() ?? Promise.resolve([]), [bridge]);
+  const getRun = useCallback((runId: string) => bridge?.getRun(runId) ?? Promise.resolve(null), [bridge]);
 
   useEffect(() => {
     mounted.current = true;
@@ -97,6 +99,8 @@ export function useTaskRuntime() {
       if (bridge) void bridge.showFloatingControls().catch(failure => { if (mounted.current) setError(message(failure)); });
     },
     listMissions,
+    listRuns,
+    getRun,
     launch: (configuration: RunConfiguration) => { if (bridge) void command(() => bridge.startTask(configuration)); },
     pause: () => { if (bridge) runCommand(id => bridge.pauseTask(id)); },
     takeOver: () => { if (bridge) runCommand(id => bridge.takeOverTask(id)); },
