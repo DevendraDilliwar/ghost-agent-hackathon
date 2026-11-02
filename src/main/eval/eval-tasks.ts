@@ -37,6 +37,19 @@ export function readOdtText(file: string): string | null {
   return readOdtEntry(file, 'content.xml');
 }
 
+/**
+ * Kills office processes orphaned by an earlier task so a stale profile lock
+ * never hangs the next task's launch or headless convert. Best effort: a
+ * missing pkill, zero matches, and kill failures are all silently fine.
+ */
+export function clearStaleOffice(pattern = 'soffice.bin'): void {
+  try {
+    execFileSync('pkill', ['-f', pattern], { timeout: 5000 });
+  } catch {
+    // Exit 1 (nothing matched) and a missing pkill are both fine.
+  }
+}
+
 function freshDir(root: string, name: string): string {
   const dir = join(root, name);
   rmSync(dir, { recursive: true, force: true });

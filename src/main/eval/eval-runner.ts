@@ -19,7 +19,7 @@ import type { JournalEvent, JournalSink } from '../../shared/contracts/journal';
 import type { MetaModelId } from '../../shared/contracts/model';
 import type { TaskSnapshot } from '../../shared/contracts/task';
 import { loadStoredApiKey } from '../config/secure-store';
-import { EVAL_TASKS, type EvalTask } from './eval-tasks';
+import { EVAL_TASKS, clearStaleOffice, type EvalTask } from './eval-tasks';
 
 export interface EvalResult {
   readonly id: string;
@@ -78,6 +78,7 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   const started = Date.now();
   const base = { id: task.id, name: task.name, kind: task.kind, workdir: ctx.root };
   try {
+    clearStaleOffice();
     task.setup(ctx.root);
   } catch (error) {
     return { ...base, success: false, verifyDetail: 'setup failed: ' + message(error), status: 'setup-error', message: '',

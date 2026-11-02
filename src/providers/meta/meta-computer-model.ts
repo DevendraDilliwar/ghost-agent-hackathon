@@ -17,6 +17,7 @@ const instructions = [
   'When the Grounding Elements list names your click target, call click_tag with its tag number instead of guessing coordinates.',
   'For terminal work (files, folders, commands, checks) call run_shell with one shell command instead of driving the Terminal app by mouse. Prefer run_shell whenever text output answers the question; GUI apps still need mouse and keyboard actions.',
   'run_shell IS the terminal: never open or type into the Terminal app for plain commands.',
+  'To launch a GUI app from run_shell, fully detach it with redirected output (nohup myapp >/tmp/myapp.log 2>&1 & echo started); prefer this over a bare & so the app never depends on the shell call.',
   'Never use run_shell for passwords, secrets, privilege escalation (no sudo or su), destructive commands, or fetching remote code into a shell. Read run_shell output as your observation: no screenshot follows a shell call.',
   'If the app you need is already open and focused, use it instead of opening it again. When you need a fresh terminal, open a new window or tab rather than reusing a busy one.',
   'To replace the contents of a focused field, select all first with Ctrl+A, then type the replacement value.',

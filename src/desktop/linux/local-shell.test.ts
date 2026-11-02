@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { LocalShell } from './local-shell';
 
 const signal = () => new AbortController().signal;
+
+/** True when a probe process with the marker is still alive. Missing pgrep reads as "no stray observed". */
+const strayProbe = (marker: string): boolean => {
+  try {
+    execFileSync('pgrep', ['-f', marker], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 describe('LocalShell', () => {
   it('runs a command from the home directory and captures output', async () => {
@@ -32,6 +43,42 @@ describe('LocalShell', () => {
     expect(result.timedOut).toBe(true);
     expect(result.exitCode).toBe(124);
   });
+
+  it('group-kills a still-running foreground and its grandchildren on timeout', async () => {
+    const started = Date.now();
+    const result = await new LocalShell(200).run('(exec -a ghost-shell-probe sleep 8 &) ; sleep 30', signal());
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).toBe(124);
+    expect(Date.now() - started).toBeLessThan(8000);
+    expect(strayProbe('ghost-shell-probe')).toBe(false);
+  }, 6000);
+
+  it('group-kills a still-running foreground and its grandchildren on abort', async () => {
+    const controller = new AbortController();
+    const pending = new LocalShell().run('(exec -a ghost-shell-abort-probe sleep 8 &) ; sleep 30', controller.signal);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    controller.abort();
+    const started = Date.now();
+    const result = await pending;
+    expect(result.exitCode).toBe(130);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(strayProbe('ghost-shell-abort-probe')).toBe(false);
+  }, 5000);
+
+  it('returns when the foreground exits, leaving a launched background app alive', async () => {
+    const started = Date.now();
+    const result = await new LocalShell().run('(exec -a ghost-shell-launch-probe sleep 8 &)', signal());
+    expect(result.timedOut).toBe(false);
+    expect(result.exitCode).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(strayProbe('ghost-shell-launch-probe')).toBe(true);
+    try {
+      execFileSync('pkill', ['-f', 'ghost-shell-launch-probe'], { timeout: 5000 });
+    } catch {
+      // Already gone.
+    }
+    expect(strayProbe('ghost-shell-launch-probe')).toBe(false);
+  }, 8000);
 
   it('stops on abort with exit code 130', async () => {
     const controller = new AbortController();

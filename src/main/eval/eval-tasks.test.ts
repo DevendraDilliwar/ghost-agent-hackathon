@@ -1,8 +1,18 @@
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EVAL_TASKS, readOdtText } from './eval-tasks';
+import { EVAL_TASKS, clearStaleOffice, readOdtText } from './eval-tasks';
+
+const probeAlive = (marker: string): boolean => {
+  try {
+    execFileSync('pgrep', ['-f', marker], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 function freshRoot(): string {
   return mkdtempSync(join(tmpdir(), 'ghost-eval-test-'));
@@ -15,6 +25,24 @@ describe('eval tasks', () => {
       expect(task.maxSteps).toBeLessThanOrEqual(25);
       expect(task.maxMinutes).toBeLessThanOrEqual(8);
       expect(task.goal('/tmp/x')).toContain('/tmp/x');
+    }
+  });
+
+  it('clearStaleOffice kills only its pattern and never throws on zero matches', async () => {
+    const marker = 'ghost-stale-office-probe';
+    const child = spawn('/bin/bash', ['-c', `exec -a ${marker} sleep 30`], { stdio: 'ignore' });
+    try {
+      let found = false;
+      for (let i = 0; i < 20 && !found; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        found = probeAlive(marker);
+      }
+      expect(found).toBe(true);
+      expect(() => clearStaleOffice(marker)).not.toThrow();
+      expect(probeAlive(marker)).toBe(false);
+      expect(() => clearStaleOffice('ghost-no-such-office-probe')).not.toThrow();
+    } finally {
+      try { child.kill('SIGKILL'); } catch { /* already gone */ }
     }
   });
 

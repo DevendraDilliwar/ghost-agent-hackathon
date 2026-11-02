@@ -146,6 +146,8 @@ describe('Meta computer-use adapter', () => {
     expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: '{' }] }, frame)).toThrow('invalid shell call');
     expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: '' }) }] }, frame)).toThrow('invalid shell call');
     expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: 'x'.repeat(2001) }) }] }, frame)).toThrow('invalid shell call');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: JSON.stringify({ command: '' }) }] }, frame)).toThrow('empty command');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...shell, arguments: '{oops' }] }, frame)).toThrow('not JSON');
   });
 
   it('parses a click_tag call into a tag choice, never coordinates', () => {

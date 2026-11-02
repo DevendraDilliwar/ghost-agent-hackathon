@@ -63,11 +63,12 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
       if (typeof handoff.arguments !== 'string' || handoff.arguments.length > 4096) throw malformed('Meta returned an unsupported shell call.');
       let shellArgs: unknown;
       try { shellArgs = JSON.parse(handoff.arguments) as unknown; }
-      catch { throw malformed('Meta returned an invalid shell call.'); }
+      catch { throw malformed('Meta returned an invalid shell call (arguments are not JSON: ' + handoff.arguments.slice(0, 120) + ').'); }
       const shellCommand = object(shellArgs).command;
-      if (typeof shellCommand !== 'string' || !shellCommand.trim() || shellCommand.length > 2000 || shellCommand.includes('\0')) {
-        throw malformed('Meta returned an invalid shell call.');
-      }
+      if (typeof shellCommand !== 'string') throw malformed('Meta returned an invalid shell call (command is not a string).');
+      if (!shellCommand.trim()) throw malformed('Meta returned an invalid shell call (empty command).');
+      if (shellCommand.length > 2000) throw malformed('Meta returned an invalid shell call (command exceeds 2000 characters).');
+      if (shellCommand.includes('\0')) throw malformed('Meta returned an invalid shell call (command contains a null byte).');
       return { action: null, shell: { command: shellCommand.trim() }, message, warnings,
         inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
     }
