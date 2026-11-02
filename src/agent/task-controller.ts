@@ -994,7 +994,7 @@ export class TaskController {
   }
 
   private noteStepTag(message: string): void {
-    const match = /\[step\s+(\d+)\]/i.exec(message);
+    const match = /\[step\s+(\d+)\]/i.exec(message) ?? /^\s*step\s+(\d+)\s*[:\-.)]/im.exec(message);
     if (!match) return;
     const phase = this.mission?.currentPhase();
     if (!phase || !this.mission) return;

@@ -977,6 +977,22 @@ describe('task lifecycle', () => {
     expect(model.decide.mock.calls[1]?.[0].history).toContain('Last step result: PRISM: typed value not visible on screen.');
   });
 
+  it('moves the checklist pointer from a bracketed step tag', async () => {
+    const { controller, model } = setup();
+    model.plan.mockResolvedValueOnce({ phases: [{ domain: 'shared', goal: 'Do things', steps: ['Open app', 'Type text', 'Save file'], success: 'Done' }], inputTokens: 8, outputTokens: 4 });
+    model.decide.mockResolvedValueOnce({ ...proposed, message: '[step 2] Typing now.' });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getMissionPlan()?.phases[0]?.activeStep).toBe(1));
+  });
+
+  it('moves the checklist pointer from a bare step tag', async () => {
+    const { controller, model } = setup();
+    model.plan.mockResolvedValueOnce({ phases: [{ domain: 'shared', goal: 'Do things', steps: ['Open app', 'Type text', 'Save file'], success: 'Done' }], inputTokens: 8, outputTokens: 4 });
+    model.decide.mockResolvedValueOnce({ ...proposed, message: 'Step 3: Saving now.' });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getMissionPlan()?.phases[0]?.activeStep).toBe(2));
+  });
+
   it('tells the model to back out instead of repeating a stalled action', async () => {
     const { controller, model } = setup();
     controller.start({ ...configuration, approvalMode: 'full_access' });
