@@ -44,7 +44,9 @@ function setup(overrides?: Partial<import('./task-controller').ControllerDepende
     parseIntent: vi.fn().mockResolvedValue({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 10, outputTokens: 5 }),
     plan: vi.fn().mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: [], success: 'Goal visibly complete' }], inputTokens: 8, outputTokens: 4 }),
     verifySuccess: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Success visible.', inputTokens: 5, outputTokens: 2 }),
-    verifyText: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 }) };
+    verifyText: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 }),
+    readSource: vi.fn().mockResolvedValue({ text: 'BILL-1 Total 100', lowConfidence: false, inputTokens: 1, outputTokens: 1 }),
+    extractFields: vi.fn().mockResolvedValue({ billNo: 'B-1', date: '12-Oct', total: '300', items: [], missing: [], inputTokens: 1, outputTokens: 1 }) };
   const changed = vi.fn();
   const clock = { now: 1000 };
   const controller = new TaskController({
@@ -1027,6 +1029,125 @@ describe('task lifecycle', () => {
     const history = model.decide.mock.calls[0]?.[0].history.join('\n') ?? '';
     expect(history).toContain('App notes (calc):');
     expect(history).toContain('Ctrl+S');
+  });
+
+  it('reads attached sources with free OCR and skips the vision fallback', async () => {
+    const ocr = { readText: vi.fn().mockResolvedValue('BILL-1\nTotal 100\nThank you for shopping') };
+    const sourceStore = { saveSource: vi.fn().mockResolvedValue([]) };
+    const { controller, model } = setup({ ocr, sourceStore });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'bill.png', mime: 'image/png', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(ocr.readText).toHaveBeenCalledTimes(1);
+    expect(ocr.readText.mock.calls[0]?.[0]).toBe('data:image/png;base64,aGk=');
+    expect(model.readSource).not.toHaveBeenCalled();
+    expect(sourceStore.saveSource).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to vision reading when local OCR fails', async () => {
+    const ocr = { readText: vi.fn().mockRejectedValue(new Error('Local OCR is unavailable.')) };
+    const { controller, model } = setup({ ocr, sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.readSource.mockResolvedValueOnce({ text: 'BILL-2 Total 250', lowConfidence: false, inputTokens: 2, outputTokens: 3 });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'bill.png', mime: 'image/png', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.readSource).toHaveBeenCalledTimes(1);
+    expect(model.readSource.mock.calls[0]?.[0].image).toBe('data:image/png;base64,aGk=');
+  });
+
+  it('asks once for unclear sources, then proceeds with best-effort text', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.readSource.mockResolvedValue({ text: 'smudge', lowConfidence: true, inputTokens: 1, outputTokens: 1 });
+    const task = controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'photo.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(controller.getSnapshot().handoff?.kind).toBe('clarification');
+    expect(model.decide).not.toHaveBeenCalled();
+    controller.resume(task.runId!, 'Bill total is 100.');
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+  });
+
+  it('reads sources from memory when the audit save fails', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockRejectedValue(new Error('disk full')) } });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'photo.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.readSource).toHaveBeenCalledTimes(1);
+  });
+
+  it('extracts bill fields from the source transcript before deciding', async () => {
+    const ocr = { readText: vi.fn().mockResolvedValue('BILL-1 12-Oct Pen 10 50 and more text here') };
+    const { controller, model } = setup({ ocr, sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'bill.png', mime: 'image/png', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.extractFields).toHaveBeenCalledTimes(1);
+    expect(model.extractFields.mock.calls[0]?.[0].transcript).toContain('BILL-1 12-Oct');
+  });
+
+  it('asks once for missing fields and re-extracts with the answer', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.extractFields
+      .mockResolvedValueOnce({ billNo: 'B-1', date: '', total: '', items: [], missing: ['date'], inputTokens: 1, outputTokens: 1 })
+      .mockResolvedValueOnce({ billNo: 'B-1', date: '12-Oct', total: '', items: [], missing: [], inputTokens: 1, outputTokens: 1 });
+    const task = controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'photo.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(controller.getSnapshot().handoff?.kind).toBe('clarification');
+    expect(model.decide).not.toHaveBeenCalled();
+    controller.resume(task.runId!, 'date is 12-Oct.');
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.extractFields).toHaveBeenCalledTimes(2);
+    expect(model.extractFields.mock.calls[1]?.[0].transcript).toContain('date is 12-Oct.');
+  });
+
+  it('accepts incomplete fields after the answer without asking twice', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.extractFields.mockResolvedValue({ billNo: 'B-1', date: '', total: '', items: [], missing: ['date', 'total'], inputTokens: 1, outputTokens: 1 });
+    const task = controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'photo.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    controller.resume(task.runId!, 'PROCEED.');
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.extractFields).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks when the extractor finds nothing but reports no gaps', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.extractFields.mockResolvedValue({ billNo: '', date: '', total: '', items: [], missing: [], inputTokens: 1, outputTokens: 1 });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'photo.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(controller.getSnapshot().handoff?.kind).toBe('clarification');
+    expect(controller.getSnapshot().message).toContain('bill number, date, items, total');
+    expect(model.decide).not.toHaveBeenCalled();
+  });
+
+  it('fails instead of entering when no values survive the answer', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.extractFields.mockResolvedValue({ billNo: ' ', date: '', total: '', items: [], missing: ['everything'], inputTokens: 1, outputTokens: 1 });
+    const task = controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'photo.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    controller.resume(task.runId!, 'PROCEED.');
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(controller.getSnapshot().message).toContain('clearer photo');
+    expect(model.decide).not.toHaveBeenCalled();
+  });
+
+  it('feeds extracted bill fields to decisions and the phase judge', async () => {
+    const ocr = { readText: vi.fn().mockResolvedValue('BILL-1 12-Oct Pen 10 50 and more text here') };
+    const { controller, model } = setup({ ocr, sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    model.extractFields.mockResolvedValue({ billNo: 'B-1', date: '', total: '300',
+      items: [{ name: 'Pen', qty: '10', price: '50' }], missing: [], inputTokens: 1, outputTokens: 1 });
+    model.decide.mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10,
+      attachments: [{ name: 'bill.png', mime: 'image/png', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    const history = model.decide.mock.calls[0]?.[0].history.join('\n') ?? '';
+    expect(history).toContain('Source bill fields: billNo B-1, date ?, total 300; items: Pen 10 50');
+    await vi.waitFor(() => expect(model.verifySuccess).toHaveBeenCalled());
+    expect(model.verifySuccess.mock.calls[0]?.[0].condition).toContain('Pen 10 50');
   });
 
   it('moves the checklist pointer from a bracketed step tag', async () => {

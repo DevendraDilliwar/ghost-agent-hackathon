@@ -53,6 +53,7 @@ export class RunHistoryStore {
           runId: record.runId, goal: record.goal, status: record.status,
           createdAt: record.createdAt, updatedAt: record.updatedAt,
           missionId: record.missionId, resumable: record.resumable,
+          attachmentNames: record.attachmentNames ?? [],
         });
         if (summaries.length >= 200) break;
       }
@@ -207,6 +208,8 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
   }
   if (data.missionId !== null && (typeof data.missionId !== 'string' || !idPattern.test(data.missionId))) return null;
   if (typeof data.resumable !== 'boolean') return null;
+  const attachmentNames = data.attachmentNames === undefined ? [] : stringList(data.attachmentNames, 3, 128);
+  if (!attachmentNames) return null;
   if (!Array.isArray(data.messages) || data.messages.length > 200) return null;
   const messages: ChatMessage[] = [];
   for (const item of data.messages) {
@@ -225,7 +228,7 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
   if (mission === undefined) return null;
   return {
     runId, goal, status: data.status as AgentStatus, message, messages, actions, mission,
-    missionId: data.missionId as string | null, resumable: data.resumable,
+    missionId: data.missionId as string | null, resumable: data.resumable, attachmentNames,
     maxSteps: data.maxSteps as number, maxMinutes: data.maxMinutes as number,
     inputTokens: data.inputTokens as number, outputTokens: data.outputTokens as number,
     createdAt: data.createdAt as number, updatedAt: data.updatedAt as number,
@@ -233,7 +236,7 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
 }
 
 /** Convert a live snapshot into a redacted, bounded history record. Returns null when the run id is unsafe. */
-export function toRunRecord(snapshot: TaskSnapshot): Omit<RunRecord, 'createdAt' | 'updatedAt'> | null {
+export function toRunRecord(snapshot: TaskSnapshot, attachmentNames: string[] = []): Omit<RunRecord, 'createdAt' | 'updatedAt'> | null {
   if (!snapshot.runId || !idPattern.test(snapshot.runId)) return null;
   const mission = snapshot.mission;
   return {
@@ -242,6 +245,7 @@ export function toRunRecord(snapshot: TaskSnapshot): Omit<RunRecord, 'createdAt'
     status: snapshot.status,
     missionId: mission?.missionId ?? null,
     resumable: mission ? mission.phases.some(phase => phase.status === 'failed' || phase.status === 'active') : false,
+    attachmentNames: attachmentNames.slice(0, 3).map(name => name.slice(0, 128)),
     maxSteps: snapshot.maxSteps,
     maxMinutes: snapshot.maxMinutes,
     message: snapshot.message.slice(0, 2000),

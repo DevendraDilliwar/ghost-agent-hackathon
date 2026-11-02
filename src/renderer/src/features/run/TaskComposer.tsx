@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
-import { ArrowUp, ChevronDown, Mic, MicOff, Plus, Sparkles, X } from 'lucide-react';
-import type { ApprovalMode, RunConfiguration } from '../../../../shared/contracts/task';
-import { BUDGET_PRESETS, matchBudgetPreset } from './task-presentation';
+import { ArrowUp, ChevronDown, Mic, MicOff, Paperclip, Plus, Sparkles, X } from 'lucide-react';
+import type { ApprovalMode, RunAttachmentInput, RunConfiguration } from '../../../../shared/contracts/task';
+import { ATTACH_ACCEPT, attachmentError, BUDGET_PRESETS, MAX_ATTACHMENTS, matchBudgetPreset } from './task-presentation';
 
 interface TaskComposerProps {
   displayName?: string;
@@ -78,9 +78,12 @@ export function TaskComposer({
   const [isListening, setIsListening] = useState(false);
   const [voiceLang, setVoiceLang] = useState<'hi-IN' | 'en-US'>('hi-IN');
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<RunAttachmentInput[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
   
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const voicePrefix = useRef('');
 
   // Initialize Speech Recognition
@@ -148,6 +151,28 @@ export function TaskComposer({
     }
   }
 
+  function removeAttachment(index: number) {
+    setAttachments(files => files.filter((_, position) => position !== index));
+  }
+
+  function pickFiles(selected: FileList | null) {
+    if (!selected) return;
+    for (const file of [...selected].slice(0, MAX_ATTACHMENTS)) {
+      const problem = attachmentError(file.name, file.type, file.size, attachments.length);
+      if (problem) { setAttachError(problem); continue; }
+      setAttachError(null);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') return;
+        const base64 = reader.result.split(',')[1];
+        if (!base64) return;
+        setAttachments(files => files.length >= MAX_ATTACHMENTS ? files : [...files, { name: file.name, mime: file.type, data: base64 }]);
+      };
+      reader.readAsDataURL(file);
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
   const canSubmit = connected && !busy && Boolean(goal.trim()) && (!modelReady || (ready && screenConsent && isolatedEnvironment));
   const submitLabel = busy ? 'Running Task...' : !connected ? 'Desktop app required' : !modelReady ? 'Set up & continue' : !ready ? 'Desktop not ready' : !screenConsent || !isolatedEnvironment ? 'Enable desktop permissions in settings' : approvalMode === 'full_access' ? 'Execute Autonomously' : 'Execute Step-by-Step';
 
@@ -155,7 +180,7 @@ export function TaskComposer({
     event?.preventDefault();
     if (!canSubmit) return;
     if (!modelReady) { onOpenSetup(); return; }
-    onLaunch({ goal: goal.trim(), maxSteps, maxMinutes, approvalMode, screenConsent, isolatedEnvironment });
+    onLaunch({ goal: goal.trim(), maxSteps, maxMinutes, approvalMode, screenConsent, isolatedEnvironment, ...(attachments.length ? { attachments } : {}) });
   }
 
   function keyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -196,8 +221,20 @@ export function TaskComposer({
           );
         })}
       </div>
+      {attachments.length > 0 && (
+        <div className="composer-attachments" aria-label="Attached images">
+          {attachments.map((file, index) => (
+            <span key={file.name + index} className="composer-attachment-chip" title={file.name}>
+              <span className="composer-attachment-name">{file.name}</span>
+              <button type="button" className="chat-icon-button composer-attachment-remove" disabled={busy} aria-label={'Remove ' + file.name} onClick={() => removeAttachment(index)}><X size={14} /></button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className={`composer-capsule ${isListening ? 'is-listening' : ''}`}>
         <button type="button" className="chat-icon-button composer-plus" disabled={busy} aria-label="Open task suggestions" aria-expanded={showPrompts} onClick={() => setShowPrompts(value => !value)}><Plus /></button>
+        <button type="button" className="chat-icon-button" disabled={busy} aria-label="Attach a source image" title="Attach a source image (PNG or JPEG)" onClick={() => fileRef.current?.click()}><Paperclip /></button>
+        <input ref={fileRef} type="file" accept={ATTACH_ACCEPT} multiple className="sr-only" aria-label="Source image file picker" onChange={event => pickFiles(event.target.files)} />
         <textarea
           ref={textareaRef}
           id="task-goal"
@@ -220,6 +257,7 @@ export function TaskComposer({
       </div>
       <span id="task-entry-help" className="sr-only">Enter to send. Shift and Enter for a new line. Desktop app and permissions required to run tasks.</span>
       {voiceError && <p role="status" className="composer-feedback">{voiceError}</p>}
+      {attachError && <p role="status" className="composer-feedback">{attachError}</p>}
     </form>
   );
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TaskComposer } from './TaskComposer';
-import { BUDGET_PRESETS, matchBudgetPreset } from './task-presentation';
+import { attachmentError, BUDGET_PRESETS, matchBudgetPreset } from './task-presentation';
 
 function render(maxSteps: number, maxMinutes: number, busy = false): string {
   return renderToStaticMarkup(createElement(TaskComposer, {
@@ -43,5 +43,26 @@ describe('composer budget presets', () => {
   it('disables preset buttons while a run is busy', () => {
     const html = render(10, 3, true);
     expect(html).toContain('composer-budget-option is-active" disabled');
+  });
+
+  it('offers a source-image picker and no chips before anything is attached', () => {
+    const html = render(25, 8);
+    expect(html).toContain('aria-label="Attach a source image"');
+    expect(html).toContain('accept="image/png,image/jpeg"');
+    expect(html).not.toContain('composer-attachment-chip');
+  });
+});
+
+describe('attachment pre-check', () => {
+  it('accepts a small PNG or JPEG inside the count limit', () => {
+    expect(attachmentError('bill.jpg', 'image/jpeg', 1024, 0)).toBeNull();
+    expect(attachmentError('sheet.png', 'image/png', 8_000_000, 2)).toBeNull();
+  });
+
+  it('rejects over-limit, wrong-type, bad-name, and oversize files', () => {
+    expect(attachmentError('fourth.png', 'image/png', 1024, 3)).toBe('Attach at most 3 images.');
+    expect(attachmentError('bill.gif', 'image/gif', 1024, 0)).toBe('Only PNG and JPEG images can be attached.');
+    expect(attachmentError('', 'image/png', 1024, 0)).toBe('Invalid attachment name.');
+    expect(attachmentError('huge.png', 'image/png', 8_000_001, 0)).toBe('Each image must be under 8MB.');
   });
 });

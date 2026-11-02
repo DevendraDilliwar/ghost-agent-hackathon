@@ -13,6 +13,8 @@ export interface RunSummary {
   readonly updatedAt: number;
   readonly missionId: string | null;
   readonly resumable: boolean;
+  /** Source image names attached in chat. Absent on older records. */
+  readonly attachmentNames?: string[];
 }
 
 export interface RunRecord extends RunSummary {

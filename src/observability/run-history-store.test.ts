@@ -59,6 +59,17 @@ describe('RunHistoryStore', () => {
     expect(toRunRecord(snapshot({ runId: '../escape' }))).toBeNull();
   });
 
+  it('round-trips attachment names and defaults legacy records to none', async () => {
+    const store = new RunHistoryStore(await mkdtemp(join(tmpdir(), 'nomcp-history-')));
+    await store.saveRun(toRunRecord(snapshot({}), ['bill.jpg'])!);
+    expect((await store.loadRun('run-1'))?.attachmentNames).toEqual(['bill.jpg']);
+    expect((await store.listRuns())[0]?.attachmentNames).toEqual(['bill.jpg']);
+    const legacy = storedRecord('run-legacy', 5);
+    delete (legacy as Record<string, unknown>).attachmentNames;
+    await writeFile(join((store as unknown as { baseDir: string }).baseDir, 'run-legacy.json'), JSON.stringify(legacy));
+    expect((await store.loadRun('run-legacy'))?.attachmentNames).toEqual([]);
+  });
+
   it('returns null for missing, corrupt, or mismatched records', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'nomcp-history-'));
     const store = new RunHistoryStore(directory);

@@ -21,6 +21,17 @@ describe('TaskHistoryList', () => {
     expect(html).toContain('history-item history-task selected');
   });
 
+  it('marks runs that carry attached source images', () => {
+    const withFiles: RunSummary[] = [
+      { runId: 'run-9', goal: 'Enter this bill', status: 'completed', createdAt: 40, updatedAt: 40, missionId: null, resumable: false, attachmentNames: ['bill.jpg', 'page2.png'] },
+    ];
+    const html = renderToStaticMarkup(createElement(TaskHistoryList, { runs: withFiles, activeRunId: null, selectedRunId: null, search: '', onSelect: vi.fn() }));
+    expect(html).toContain('history-attachment');
+    expect(html).toContain('bill.jpg, page2.png');
+    const plain = renderToStaticMarkup(createElement(TaskHistoryList, { runs, activeRunId: 'run-3', selectedRunId: null, search: '', onSelect: vi.fn() }));
+    expect(plain).not.toContain('history-attachment');
+  });
+
   it('filters by search and shows an empty state', () => {
     const html = renderToStaticMarkup(createElement(TaskHistoryList, { runs, activeRunId: null, selectedRunId: null, search: 'failed', onSelect: vi.fn() }));
     expect(html).toContain('Failed task');

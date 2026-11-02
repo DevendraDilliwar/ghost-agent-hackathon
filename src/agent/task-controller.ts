@@ -1,5 +1,5 @@
-import type { AgentAction, ApprovalMode, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
-import type { CheckpointPort, DesktopPort, MemoryStorePort, ModelDecision, ModelPort, OcrPort, PlanDecision, ShellPort, SkillStorePort, VerifyDecision } from './ports';
+import type { AgentAction, ApprovalMode, RunAttachmentInput, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
+import type { CheckpointPort, DesktopPort, ExtractDecision, MemoryStorePort, ModelDecision, ModelPort, OcrPort, PlanDecision, ShellPort, SkillStorePort, SourceStorePort, VerifyDecision } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import { SkillMemory } from './memory/skill-memory';
@@ -42,6 +42,8 @@ export interface ControllerDependencies {
   memoryStore?: MemoryStorePort;
   /** Local OCR for free typed-text checks. Absent without tesseract. */
   ocr?: OcrPort;
+  /** Chat-attachment persistence for photo-to-entry runs. Absent in tests and minimal hosts. */
+  sourceStore?: SourceStorePort;
   id: () => string;
   describe: (action: DesktopCommand) => string;
   validateAction: (action: unknown, observation: ScreenObservation) => DesktopCommand;
@@ -106,6 +108,16 @@ function batchSignature(actions: DesktopCommand[]): string {
   }).join(' → ');
 }
 
+/**
+ * Compact one-line rendering of extracted bill fields for decide() history
+ * and the phase judge. Bounded: values ride every decision, so rows are capped.
+ */
+function formatExtracted(fields: ExtractDecision): string {
+  const head = ['billNo ' + (fields.billNo || '?'), 'date ' + (fields.date || '?'), 'total ' + (fields.total || '?')].join(', ');
+  const rows = fields.items.slice(0, 20).map(row => [row.name || '?', row.qty || '?', row.price || '?'].join(' ')).join(' | ');
+  return (head + (rows ? '; items: ' + rows : '')).slice(0, 2000);
+}
+
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -124,6 +136,12 @@ export class TaskController {
   /** Last progressed desktop batch signature; three identical in a row mean a save-style loop. Stalled batches go through recovery instead. */
   private lastBatchSignature: string | null = null;
   private batchRepeatStreak = 0;
+  /** Resolved source transcript for photo-to-entry runs. Consumed by field extraction (Phase 3). */
+  private source: { transcript: string; lowConfidence: boolean } | null = null;
+  private sourceAsked = false;
+  private attachments: RunAttachmentInput[] = [];
+  private extracted: ExtractDecision | null = null;
+  private extractAsked = false;
   /** Last seen foreground window, narrated to the model so it knows where it is. */
   private lastWindowId: string | null = null;
   private lastWindowTitle: string | null = null;
@@ -185,6 +203,11 @@ export class TaskController {
     this.shellRepeatNote = null;
     this.lastBatchSignature = null;
     this.batchRepeatStreak = 0;
+    this.source = null;
+    this.sourceAsked = false;
+    this.attachments = configuration.attachments ?? [];
+    this.extracted = null;
+    this.extractAsked = false;
     this.lastWindowId = null;
     this.lastWindowTitle = null;
     this.focusChanges = [];
@@ -346,6 +369,112 @@ export class TaskController {
     });
   }
 
+  /**
+   * Reads chat-attached source images once per run: PNGs go through free
+   * local OCR, JPEGs and OCR failures fall back to a paid vision read.
+   * Unreadable sources yield one clarification; the answer unblocks the run
+   * with best-effort text (field-level questions come from extraction).
+   * True when the run may proceed.
+   */
+  private async ensureSource(signal: AbortSignal, generation: number): Promise<boolean> {
+    const attachments = this.attachments;
+    if (!attachments.length || this.source) return true;
+    const runId = this.getSnapshot().runId;
+    if (this.dependencies.sourceStore && runId) {
+      try {
+        await this.dependencies.sourceStore.saveSource(runId, attachments);
+      } catch {
+        // Audit trail only: reading continues from the in-memory bytes.
+      }
+    }
+    if (!this.current(generation, signal)) return false;
+    const parts: string[] = [];
+    let unreadable = 0;
+    for (const file of attachments) {
+      if (!this.current(generation, signal)) return false;
+      const reading = await this.readAttachment(file, signal, generation);
+      if (!reading || !this.current(generation, signal)) return false;
+      parts.push('--- ' + file.name + ' ---\n' + reading.text);
+      if (reading.lowConfidence) unreadable++;
+    }
+    const transcript = parts.join('\n\n').slice(0, 16_000);
+    if (unreadable > 0 && !this.sourceAsked) {
+      this.sourceAsked = true;
+      this.record('verify', 'stalled', 'Source images unclear (' + unreadable + ' of ' + attachments.length + '); asking the user.');
+      this.yieldToUser({ kind: 'clarification',
+        reason: 'Some attached images are unclear, so amounts may be misread. Reply with the key values or say PROCEED to continue with best-effort reading.',
+        questions: [{ id: 'source-1', question: 'The attached photo is unclear. Type the key values (bill no, date, amounts), or PROCEED for best-effort reading.', options: [] }] });
+      return false;
+    }
+    this.source = { transcript, lowConfidence: unreadable > 0 };
+    this.record('verify', 'success', 'Source read complete (' + attachments.length + ' image' + (attachments.length === 1 ? '' : 's') + ').');
+    return true;
+  }
+
+  private async readAttachment(file: RunAttachmentInput, signal: AbortSignal, generation: number): Promise<{ text: string; lowConfidence: boolean } | null> {
+    const image = 'data:' + file.mime + ';base64,' + file.data;
+    if (file.mime === 'image/png' && this.dependencies.ocr) {
+      try {
+        const text = await this.dependencies.ocr.readText(image, signal);
+        if (text.replace(/\s/g, '').length >= 10) return { text: text.slice(0, 6000), lowConfidence: false };
+      } catch {
+        // Fall through to the vision read.
+      }
+      if (!this.current(generation, signal)) return null;
+    }
+    const reading = await this.dependencies.model.readSource({ image, signal });
+    const inputTokens = this.state.inputTokens + reading.inputTokens;
+    const outputTokens = this.state.outputTokens + reading.outputTokens;
+    this.state = { ...this.state, inputTokens, outputTokens };
+    const budget = this.tokenBudget();
+    if (inputTokens > budget.input || outputTokens > budget.output) {
+      this.fail('The run token allowance was reached. No further actions will be dispatched.');
+      return null;
+    }
+    const text = reading.text.slice(0, 6000);
+    return { text, lowConfidence: reading.lowConfidence || !text.trim() };
+  }
+
+  /**
+   * Turns the source transcript into bill fields once per run. Gaps yield one
+   * clarification; the answer feeds a single re-extract, then the run accepts
+   * whatever was found (entry confirms the rest). True when the run may proceed.
+   */
+  private async ensureExtract(signal: AbortSignal, generation: number): Promise<boolean> {
+    if (!this.source || this.extracted) return true;
+    const extra = this.extractAsked && this.clarifications.length
+      ? '\n\nUser provided (use verbatim, do not re-ask): ' + this.clarifications.slice(-3).join(' | ').slice(0, 1000)
+      : '';
+    const fields = await this.dependencies.model.extractFields({ transcript: (this.source.transcript + extra).slice(0, 17_000), signal });
+    if (!this.current(generation, signal)) return false;
+    const inputTokens = this.state.inputTokens + fields.inputTokens;
+    const outputTokens = this.state.outputTokens + fields.outputTokens;
+    this.state = { ...this.state, inputTokens, outputTokens };
+    const budget = this.tokenBudget();
+    if (inputTokens > budget.input || outputTokens > budget.output) {
+      this.fail('The run token allowance was reached. No further actions will be dispatched.');
+      return false;
+    }
+    const usable = fields.billNo.trim() || fields.date.trim() || fields.total.trim() || fields.items.length > 0;
+    if ((!usable || fields.missing.length > 0) && !this.extractAsked) {
+      this.extractAsked = true;
+      const list = fields.missing.length ? fields.missing.slice(0, 5).join('; ').slice(0, 300) : 'bill number, date, items, total';
+      this.record('verify', 'stalled', 'Bill fields incomplete; asking the user.');
+      this.yieldToUser({ kind: 'clarification',
+        reason: 'The bill photo is missing some values (' + list + '). Reply with them or say PROCEED to enter what was found.',
+        questions: [{ id: 'extract-1', question: 'Photo is missing: ' + list + '. Type the values, or PROCEED to enter only what was found.', options: [] }] });
+      return false;
+    }
+    if (!usable) {
+      this.fail('Could not read any usable values from the photo, even after your reply. Retake a clearer photo and start a new run.');
+      return false;
+    }
+    this.extracted = fields;
+    const found = [fields.billNo.trim().slice(0, 24), fields.total.trim().slice(0, 24)].filter(part => part).join(' / ');
+    this.record('verify', 'success', 'Fields extracted (' + fields.items.length + ' rows' + (found ? ', ' + found : '') + (fields.missing.length ? ', ' + fields.missing.length + ' gaps accepted' : '') + ').');
+    return true;
+  }
+
   private async advance(signal: AbortSignal, generation: number, execution?: BatchExecution): Promise<void> {
     try {
       await this.loadSkills();
@@ -359,6 +488,10 @@ export class TaskController {
         if (!ready || !this.current(generation, signal)) return;
       }
       await this.dependencies.desktop.preflight(signal);
+      if (!this.current(generation, signal)) return;
+      if (!await this.ensureSource(signal, generation)) return;
+      if (!this.current(generation, signal)) return;
+      if (!await this.ensureExtract(signal, generation)) return;
       if (!this.current(generation, signal)) return;
       let failedActionId: string | null = null;
       let executionError: string | null = null;
@@ -551,6 +684,7 @@ export class TaskController {
     }
     const appProfile = matchAppProfile(this.lastWindowTitle);
     if (appProfile) history.push('App notes (' + appProfile.id + '): ' + appProfile.notes);
+    if (this.extracted) history.push('Source bill fields: ' + formatExtracted(this.extracted));
     if (progressNote) history.push(progressNote);
     if (this.unmetNote) {
       history.push(this.unmetNote);
@@ -1061,7 +1195,8 @@ export class TaskController {
       .slice(-5)
       .map(action => action.description.slice(0, 200) + ' → ' + (action.verification?.summary ?? '').slice(0, 400));
     const input = {
-      condition: phase.success, steps: [...phase.steps],
+      condition: phase.success + (this.extracted ? ' Expected on screen: ' + formatExtracted(this.extracted).slice(0, 800) : ''),
+      steps: [...phase.steps],
       ...(transcript.length ? { transcript } : {}),
       observation, signal,
     };

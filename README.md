@@ -55,6 +55,17 @@ A UI-tag grounding seam exists for a future detector; it currently returns zero 
 
 ---
 
+## 📸 Photo-to-entry (bill photo → app entry)
+
+1. Attach up to 3 bill photos (PNG/JPEG, ≤8MB each) with the 📎 button, then type the goal ("is bill ki entry Calc me karo").
+2. The agent reads the photo (free OCR first, vision fallback), extracts bill no / date / total / item rows, and asks once if values are missing — reply with the values or PROCEED.
+3. Extracted values drive the entry field-by-field; every typed value is read back (PRISM) and the final screen is cross-checked against the photo before the run completes.
+4. If nothing readable survives, the run fails fast with guidance instead of typing guesses.
+
+Limits: printed bills only (handwriting not supported); mid-run corrections are typed as text answers (re-attaching a photo mid-run is not supported).
+
+---
+
 ## 🚀 Quick Start
 
 ### Installation & Run

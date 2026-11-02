@@ -6,6 +6,7 @@ import os from 'node:os';
 import { FileJournal } from '../../observability/journal';
 import { CheckpointStore } from '../../observability/checkpoint-store';
 import { RunHistoryStore, toRunRecord } from '../../observability/run-history-store';
+import { AttachmentStore } from '../../observability/attachment-store';
 import { SkillStore } from '../../observability/skill-store';
 import { MemoryStore } from '../../observability/memory-store';
 import type { RunRecord, RunSummary } from '../../shared/contracts/history';
@@ -59,6 +60,14 @@ function historyDirectory(): string {
     return join(app.getPath('userData'), 'nomcp-history');
   } catch {
     return join(os.tmpdir(), 'nomcp-history');
+  }
+}
+
+function attachmentsDirectory(): string {
+  try {
+    return join(app.getPath('userData'), 'nomcp-attachments');
+  } catch {
+    return join(os.tmpdir(), 'nomcp-attachments');
   }
 }
 
@@ -121,6 +130,8 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
   const journal = new FileJournal(journalDirectory());
   const checkpoints = new CheckpointStore(missionsDirectory());
   const history = new RunHistoryStore(historyDirectory());
+  const attachmentNames = new Map<string, string[]>();
+  const attachmentStore = new AttachmentStore(attachmentsDirectory());
   const skills = new SkillMemory();
   const controller = new TaskController({
     checkpoints,
@@ -132,12 +143,15 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     crossTaskMemory: new CrossTaskMemory(),
     memoryStore: new MemoryStore(memoryDirectory()),
     ocr: new TesseractOcr(),
+    sourceStore: { saveSource: (runId, files) => attachmentStore.saveAttachments(runId, files) },
     model: {
       decide: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).decide(input),
       parseIntent: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).parseIntent(input),
       plan: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).plan(input),
       verifySuccess: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifySuccess(input),
       verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifyText(input),
+      readSource: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).readSource(input),
+      extractFields: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).extractFields(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,
@@ -146,8 +160,12 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(IPC_CHANNELS.taskChanged, snapshot);
       if (!controls.isDestroyed() && !controls.webContents.isDestroyed()) controls.webContents.send(IPC_CHANNELS.controlsChanged, controlsSnapshot(snapshot, shortcut?.label ?? null));
       if (snapshot.runId) {
-        const record = toRunRecord(snapshot);
+        const record = toRunRecord(snapshot, attachmentNames.get(snapshot.runId) ?? []);
         if (record) void history.saveRun(record).catch(() => undefined);
+        if (snapshot.status === 'completed' || snapshot.status === 'stopped' || snapshot.status === 'failed') {
+          attachmentNames.delete(snapshot.runId);
+          void attachmentStore.pruneAttachments(snapshot.runId).catch(() => undefined);
+        }
       }
     },
   });
@@ -180,7 +198,9 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     start(configuration: RunConfiguration): TaskSnapshot {
       if (!connection.info().verified) throw new Error('Test your Meta connection in Settings before starting.');
       if (!ensureEmergencyStop()) throw new Error(shortcutUnavailable);
-      return controller.start(configuration);
+      const snapshot = controller.start(configuration);
+      if (snapshot.runId) attachmentNames.set(snapshot.runId, (configuration.attachments ?? []).map(file => file.name.slice(0, 128)));
+      return snapshot;
     },
     listMissions(): Promise<MissionSummary[]> {
       return checkpoints.listMissions();

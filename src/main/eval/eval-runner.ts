@@ -99,6 +99,8 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
       plan: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).plan(input),
       verifySuccess: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model, verifyModel: ctx.verifyModel }).verifySuccess(input),
       verifyText: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model, verifyModel: ctx.verifyModel }).verifyText(input),
+      readSource: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).readSource(input),
+      extractFields: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).extractFields(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,

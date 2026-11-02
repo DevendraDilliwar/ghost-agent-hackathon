@@ -47,6 +47,22 @@ export interface ChatMessage {
   verificationImage?: string;
 }
 
+export interface RunAttachmentInput {
+  /** Original file name for display. Never used as a path without sanitizing. */
+  name: string;
+  mime: string;
+  /** Base64-encoded file bytes. png/jpeg only, see validateRunConfiguration for bounds. */
+  data: string;
+}
+
+export interface StoredAttachment {
+  readonly name: string;
+  readonly mime: string;
+  readonly size: number;
+  /** Absolute local path. Main process only — never sent to the renderer. */
+  readonly path: string;
+}
+
 export interface RunConfiguration {
   goal: string;
   approvalMode: ApprovalMode;
@@ -56,6 +72,8 @@ export interface RunConfiguration {
   isolatedEnvironment: boolean;
   /** Resume a saved mission under a new run instead of starting fresh. */
   resume?: { missionId: string; /** Retry intent added as a phase note; also resets stall streaks. */ note?: string };
+  /** Source images attached in chat. Validated at start; read from Phase 2. */
+  attachments?: RunAttachmentInput[];
 }
 
 export interface ClarificationQuestion {

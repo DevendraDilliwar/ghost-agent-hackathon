@@ -3,6 +3,8 @@ import { malformed, parseMetaDecision } from './parse-response';
 import { parseIntentResponse } from './parse-intent';
 import { parsePlanResponse } from './parse-plan';
 import { parseVerifyResponse } from './parse-verify';
+import { parseSourceResponse } from './parse-source';
+import { parseExtractResponse } from './parse-extract';
 import { requestMeta } from './meta-request';
 import type { MetaConfiguration } from './meta-request';
 
@@ -63,6 +65,20 @@ const verifyInstructions = [
   'Set confirmed true only if the expected text is clearly visible on screen. Ignore formatting differences such as commas, decimals, spaces, and date separators when comparing.',
   'If an error dialog or blocking pop-up is visible, say so in detail.',
   'Keep detail under 500 characters.',
+].join(' ');
+
+const sourceInstructions = [
+  'You transcribe a source photo (bill, sheet, receipt) for data entry. Reply with exactly one JSON object and nothing else: no markdown, no code fences, no explanation.',
+  'Schema: {"text": "all visible text in reading order", "lowConfidence": true or false}.',
+  'Set lowConfidence true when any amount, date, name, or total is blurry, cut off, or guessed. Never invent values.',
+  'Keep text under 16000 characters.',
+].join(' ');
+
+const extractInstructions = [
+  'You turn a transcribed bill into data-entry fields. Reply with exactly one JSON object and nothing else: no markdown, no code fences, no explanation.',
+  'Schema: {"billNo": "string", "date": "string", "total": "string", "items": [{"name": "string", "qty": "string", "price": "string"}], "missing": ["free-form gaps"]}.',
+  'Use "" for any value not clearly present and name it in missing (for example "row 3 price"). Never invent values.',
+  'At most 50 items and 10 missing entries.',
 ].join(' ');
 
 export class MetaComputerModel implements ModelPort {
@@ -156,6 +172,27 @@ export class MetaComputerModel implements ModelPort {
       ] }],
     }, input.signal, this.request);
     return parseVerifyResponse(response);
+  }
+
+  async readSource(input: Parameters<ModelPort['readSource']>[0]) {
+    const response = await requestMeta(this.config, {
+      max_output_tokens: 2048, reasoning: { effort: 'low' }, instructions: sourceInstructions,
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: 'Transcribe this source image for data entry.' },
+        { type: 'input_image', image_url: input.image },
+      ] }],
+    }, input.signal, this.request);
+    return parseSourceResponse(response);
+  }
+
+  async extractFields(input: Parameters<ModelPort['extractFields']>[0]) {
+    const response = await requestMeta(this.config, {
+      max_output_tokens: 2048, reasoning: { effort: 'low' }, instructions: extractInstructions,
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: 'Extract data-entry fields from this transcript:\n\n' + input.transcript },
+      ] }],
+    }, input.signal, this.request);
+    return parseExtractResponse(response);
   }
 
   async verifyText(input: Parameters<ModelPort['verifyText']>[0]) {

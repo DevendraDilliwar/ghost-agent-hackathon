@@ -57,4 +57,21 @@ describe('task boundary validation', () => {
   ])('rejects an invalid mission resume reference', value => {
     expect(() => validateRunConfiguration(value)).toThrow('Invalid mission resume reference');
   });
+  it('accepts chat image attachments and trims their names', () => {
+    expect(validateRunConfiguration({ ...valid }).attachments).toBeUndefined();
+    const configuration = validateRunConfiguration({ ...valid, attachments: [{ name: '  bill.jpg  ', mime: 'image/jpeg', data: 'aGk=' }] });
+    expect(configuration.attachments).toEqual([{ name: 'bill.jpg', mime: 'image/jpeg', data: 'aGk=' }]);
+  });
+  it.each([
+    { ...valid, attachments: [{ name: 'bill.gif', mime: 'image/gif', data: 'aGk=' }] },
+    { ...valid, attachments: [{ name: 'bill.jpg', mime: 'image/jpeg', data: 'not base64!!' }] },
+    { ...valid, attachments: [{ name: 'bill.jpg', mime: 'image/jpeg', data: '' }] },
+    { ...valid, attachments: [{ name: 'bill.jpg', mime: 'image/jpeg', data: 'A'.repeat(11_200_001) }] },
+    { ...valid, attachments: [{ name: '../evil.png', mime: 'image/png', data: 'aGk=' }] },
+    { ...valid, attachments: [{ name: '', mime: 'image/png', data: 'aGk=' }] },
+    { ...valid, attachments: 'bill.jpg' },
+    { ...valid, attachments: [{ name: '1.png', mime: 'image/png', data: 'aGk=' }, { name: '2.png', mime: 'image/png', data: 'aGk=' }, { name: '3.png', mime: 'image/png', data: 'aGk=' }, { name: '4.png', mime: 'image/png', data: 'aGk=' }] },
+  ])('rejects invalid attachments', value => {
+    expect(() => validateRunConfiguration(value)).toThrow();
+  });
 });

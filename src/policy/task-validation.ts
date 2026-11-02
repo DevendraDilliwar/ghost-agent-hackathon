@@ -1,4 +1,4 @@
-import type { RunConfiguration } from '../shared/contracts/task';
+import type { RunAttachmentInput, RunConfiguration } from '../shared/contracts/task';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
 
 function record(value: unknown): Record<string, unknown> {
@@ -44,6 +44,13 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
     }
     resume = { missionId, ...(note === undefined ? {} : { note }) };
   }
+  let attachments: RunConfiguration['attachments'];
+  if (input.attachments !== undefined) {
+    if (!Array.isArray(input.attachments) || input.attachments.length > 3) {
+      throw new Error('Attach at most 3 images.');
+    }
+    attachments = input.attachments.map(item => validateAttachment(item));
+  }
   return {
     goal: input.goal.trim(),
     approvalMode: (mode === 'ask_approval' ? 'ask_approval' : 'full_access') as RunConfiguration['approvalMode'],
@@ -52,7 +59,25 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
     screenConsent: true,
     isolatedEnvironment: true,
     ...(resume ? { resume } : {}),
+    ...(attachments ? { attachments } : {}),
   };
+}
+
+function validateAttachment(value: unknown): RunAttachmentInput {
+  const file = record(value);
+  if (typeof file.name !== 'string' || !file.name.trim() || file.name.trim().length > 128 ||
+      file.name.includes('\0') || file.name.includes('/') || file.name.includes('\\')) {
+    throw new Error('Invalid attachment name.');
+  }
+  if (file.mime !== 'image/png' && file.mime !== 'image/jpeg') {
+    throw new Error('Only PNG and JPEG attachments are supported.');
+  }
+  // ~8MB decoded: base64 inflates by 4/3.
+  if (typeof file.data !== 'string' || !file.data || file.data.length > 11_200_000 ||
+      !/^[A-Za-z0-9+/=]+$/.test(file.data)) {
+    throw new Error('Invalid attachment data.');
+  }
+  return { name: file.name.trim(), mime: file.mime, data: file.data };
 }
 
 export function validateDesktopCommand(value: unknown, frame: Pick<ScreenObservation, 'width' | 'height'>): DesktopCommand {

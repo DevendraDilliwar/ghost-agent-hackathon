@@ -69,6 +69,24 @@ export interface PlanDecision {
   readonly outputTokens: number;
 }
 
+export interface SourceDecision {
+  readonly text: string;
+  readonly lowConfidence: boolean;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
+export interface ExtractDecision {
+  readonly billNo: string;
+  readonly date: string;
+  readonly total: string;
+  readonly items: ReadonlyArray<{ readonly name: string; readonly qty: string; readonly price: string }>;
+  /** Free-form gaps the model could not find (e.g. "row 3 price"). Empty when complete. */
+  readonly missing: readonly string[];
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 /** Local text recognition. Rejects when OCR is unavailable. */
 export interface OcrPort {
   readText(image: string, signal: AbortSignal): Promise<string>;
@@ -94,6 +112,11 @@ export interface CheckpointPort {
   save(checkpoint: import('../shared/contracts/mission').PhaseCheckpoint): Promise<void>;
   list(missionId: string): Promise<Array<import('../shared/contracts/mission').PhaseCheckpoint>>;
   listMissions(): Promise<Array<import('../shared/contracts/mission').MissionSummary>>;
+}
+
+/** Durable chat-attachment persistence for photo-to-entry runs. Pruning stays runtime-side. */
+export interface SourceStorePort {
+  saveSource(runId: string, files: readonly import('../shared/contracts/task').RunAttachmentInput[]): Promise<readonly import('../shared/contracts/task').StoredAttachment[]>;
 }
 
 export interface ModelPort {
@@ -122,6 +145,14 @@ export interface ModelPort {
     context?: string;
     signal: AbortSignal;
   }): Promise<PlanDecision>;
+  readSource(input: {
+    image: string;
+    signal: AbortSignal;
+  }): Promise<SourceDecision>;
+  extractFields(input: {
+    transcript: string;
+    signal: AbortSignal;
+  }): Promise<ExtractDecision>;
   verifyText(input: {
     text: string;
     observation: ScreenObservation;

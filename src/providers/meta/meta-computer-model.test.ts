@@ -277,6 +277,34 @@ describe('Meta computer-use adapter', () => {
     expect(result).toMatchObject({ confirmed: true, inputTokens: 60, outputTokens: 12 });
   });
 
+  it('transcribes source images through the planning model', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 70, output_tokens: 30 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"text":"BILL-1 Total 100","lowConfidence":false}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3', verifyModel: 'muse-wonder-1.0' }, request);
+    const result = await model.readSource({ image: 'data:image/png;base64,aGk=', signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.model).toBe('muse-spark-1.3');
+    expect(body.tools).toBeUndefined();
+    expect(result).toEqual({ text: 'BILL-1 Total 100', lowConfidence: false, inputTokens: 70, outputTokens: 30 });
+  });
+
+  it('extracts bill fields from a transcript through the planning model', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 80, output_tokens: 40 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"billNo":"B-1","date":"12-Oct","total":"300","items":[{"name":"Pen","qty":"10","price":"50"}],"missing":[]}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3', verifyModel: 'muse-wonder-1.0' }, request);
+    const result = await model.extractFields({ transcript: 'BILL-1 12-Oct Pen 10 50', signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.model).toBe('muse-spark-1.3');
+    expect(body.tools).toBeUndefined();
+    expect(String(JSON.stringify(body.input))).toContain('BILL-1 12-Oct');
+    expect(result).toMatchObject({ billNo: 'B-1', total: '300', inputTokens: 80, outputTokens: 40 });
+    expect(result.items).toHaveLength(1);
+  });
+
   it('plans ordered domain phases without tools or screenshots', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       status: 'completed', usage: { input_tokens: 45, output_tokens: 18 },

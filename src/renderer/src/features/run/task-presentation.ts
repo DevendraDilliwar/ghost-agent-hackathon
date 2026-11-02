@@ -53,3 +53,19 @@ export const BUDGET_PRESETS: readonly BudgetPreset[] = [
 export function matchBudgetPreset(maxSteps: number, maxMinutes: number): BudgetPresetId | null {
   return BUDGET_PRESETS.find(preset => preset.maxSteps === maxSteps && preset.maxMinutes === maxMinutes)?.id ?? null;
 }
+
+export const ATTACH_ACCEPT = 'image/png,image/jpeg';
+export const MAX_ATTACHMENTS = 3;
+export const MAX_ATTACHMENT_BYTES = 8_000_000;
+
+/**
+ * Client-side pre-check for a chat attachment; main-process validation is
+ * authoritative. Returns the user-facing reason, or null when acceptable.
+ */
+export function attachmentError(name: string, type: string, size: number, count: number): string | null {
+  if (count >= MAX_ATTACHMENTS) return 'Attach at most 3 images.';
+  if (type !== 'image/png' && type !== 'image/jpeg') return 'Only PNG and JPEG images can be attached.';
+  if (!name.trim() || name.length > 128) return 'Invalid attachment name.';
+  if (size < 1 || size > MAX_ATTACHMENT_BYTES) return 'Each image must be under 8MB.';
+  return null;
+}

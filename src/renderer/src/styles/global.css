@@ -211,6 +211,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .composer-menu > button { display: flex; align-items: center; justify-content: space-between; text-align: left; width: 100%; border-radius: 10px; padding: 12px 10px; font-size: 13px; }
 .composer-menu > button:hover { background: #363636; }
 .composer-feedback { font-size: 12px; color: #e9c68f; padding: 8px 14px 0; }
+.composer-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+.composer-attachment-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 220px; padding: 3px 4px 3px 10px; border-radius: 999px; background: #383939; color: #e3e3e3; font-size: 12px; }
+.composer-attachment-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.composer-attachment-chip .chat-icon-button { width: 22px; height: 22px; }
+.composer-attachment-chip .chat-icon-button svg { width: 13px; height: 13px; }
+.history-attachment { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; color: #9c9c9c; font-size: 11px; }
 .composer-budget { display: flex; align-items: center; gap: 6px; padding: 0 14px 8px; }
 .composer-budget-label { font-size: 11px; color: #8e8e93; margin-right: 2px; }
 .composer-budget-option { font-size: 11px; line-height: 1; color: #bcbfc3; background: #252525; border: 1px solid transparent; border-radius: 999px; padding: 6px 11px; }

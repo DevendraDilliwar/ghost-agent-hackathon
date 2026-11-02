@@ -6,7 +6,7 @@ import { createTaskRuntime } from './create-task-runtime';
 
 const stubs = vi.hoisted(() => ({
   preflight: vi.fn(), capture: vi.fn(), execute: vi.fn(), decide: vi.fn(), parseIntent: vi.fn(), plan: vi.fn(), verifySuccess: vi.fn(), verifyText: vi.fn(),
-  probe: vi.fn(), modelOptions: vi.fn(), register: vi.fn(), unregister: vi.fn(), isRegistered: vi.fn(),
+  probe: vi.fn(), modelOptions: vi.fn(), register: vi.fn(), unregister: vi.fn(), isRegistered: vi.fn(), readSource: vi.fn(), extractFields: vi.fn(),
   saveKey: vi.fn(), loadKey: vi.fn(), clearKey: vi.fn(), hasKey: vi.fn(),
 }));
 vi.mock('electron', () => ({ globalShortcut: { register: stubs.register, unregister: stubs.unregister, isRegistered: stubs.isRegistered } }));
@@ -25,6 +25,8 @@ vi.mock('../../providers/meta/meta-computer-model', () => ({ MetaComputerModel: 
   plan = stubs.plan;
   verifySuccess = stubs.verifySuccess;
   verifyText = stubs.verifyText;
+  readSource = stubs.readSource;
+  extractFields = stubs.extractFields;
 } }));
 
 const runtimes: ReturnType<typeof createTaskRuntime>[] = [];
@@ -55,6 +57,8 @@ beforeEach(() => {
   stubs.plan.mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: [], success: 'Goal visibly complete' }], inputTokens: 1, outputTokens: 1 });
   stubs.verifySuccess.mockResolvedValue({ confirmed: true, detail: 'Success visible.', inputTokens: 1, outputTokens: 1 });
   stubs.verifyText.mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 1, outputTokens: 1 });
+  stubs.readSource.mockResolvedValue({ text: 'BILL-1 Total 100', lowConfidence: false, inputTokens: 1, outputTokens: 1 });
+  stubs.extractFields.mockResolvedValue({ billNo: 'B-1', date: '12-Oct', total: '300', items: [], missing: [], inputTokens: 1, outputTokens: 1 });
 });
 
 describe('emergency Stop registration and task readiness', () => {
@@ -171,6 +175,23 @@ function setup() {
   runtimes.push(runtime);
   return runtime;
 }
+
+describe('run history attachment names', () => {
+  it('records attachment names on the run history', async () => {
+    const runtime = setup();
+    await runtime.testConnection('fake-session-key');
+    const task = runtime.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'bill.jpg', mime: 'image/jpeg', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(runtime.controller.getSnapshot().status).toBe('verifying'));
+    runtime.controller.confirm(task.runId!, true);
+    await vi.waitFor(async () => {
+      const runs = await runtime.listRuns();
+      expect(runs.find(run => run.runId === task.runId)?.status).toBe('completed');
+    });
+    const runs = await runtime.listRuns();
+    expect(runs.find(run => run.runId === task.runId)?.attachmentNames).toEqual(['bill.jpg']);
+  });
+});
 
 describe('model connection across tasks in one app session', () => {
   it('uses one verified key for successive completed tasks without another connection test', async () => {
