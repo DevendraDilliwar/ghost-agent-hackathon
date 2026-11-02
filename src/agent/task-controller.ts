@@ -97,6 +97,11 @@ export class TaskController {
   private pendingShell: string | null = null;
   /** Consecutive failed shell commands. Three in a row hands control to the user. */
   private shellFailures = 0;
+  /** Signature of the last successful shell output; identical repeats signal a check-loop. */
+  private lastShellOutput: string | null = null;
+  private shellRepeatStreak = 0;
+  /** One-shot nudge consumed by the next decide() when shell output repeats. */
+  private shellRepeatNote: string | null = null;
   /** Last seen foreground window, narrated to the model so it knows where it is. */
   private lastWindowId: string | null = null;
   private lastWindowTitle: string | null = null;
@@ -153,6 +158,9 @@ export class TaskController {
     this.lastDecideMs = 0;
     this.pendingShell = null;
     this.shellFailures = 0;
+    this.lastShellOutput = null;
+    this.shellRepeatStreak = 0;
+    this.shellRepeatNote = null;
     this.lastWindowId = null;
     this.lastWindowTitle = null;
     this.focusChanges = [];
@@ -225,6 +233,9 @@ export class TaskController {
         { id: this.dependencies.id(), sender: 'user', content: 'Clarification: ' + answer.trim(), timestamp: this.timestamp() }] };
     } else if (answer !== undefined && answer !== '') throw new Error('This task is not asking for a text clarification.');
     this.noProgressStreak = 0;
+    this.lastShellOutput = null;
+    this.shellRepeatStreak = 0;
+    this.shellRepeatNote = null;
     this.update({ status: 'observing', handoff: null, screenshot: null, message: 'Resuming from a fresh screen observation.' });
     this.launch();
     return this.getSnapshot();
@@ -431,6 +442,9 @@ export class TaskController {
           this.noProgressStreak = 0;
           this.stallCycles = 0;
           this.lastGuidance = null;
+          // A bare look-around must not mask a shell check-loop: only a real
+          // click, type, or keypress resets the identical-output streak.
+          if (probe.type !== 'screenshot' && probe.type !== 'wait') this.shellRepeatStreak = 0;
         } else {
           const recovery = (this.dependencies.recovery ?? defaultErrorLoop).decide({
             action: execution.actions.at(-1)!,
@@ -504,6 +518,10 @@ export class TaskController {
     if (this.unmetNote) {
       history.push(this.unmetNote);
       this.unmetNote = null;
+    }
+    if (this.shellRepeatNote) {
+      history.push(this.shellRepeatNote);
+      this.shellRepeatNote = null;
     }
     const phase = this.mission?.currentPhase();
     if (phase) {
@@ -707,9 +725,10 @@ export class TaskController {
 
   /**
    * Runs one terminal command and records its text output as the observation.
-   * The exit code plus output always counts as progress: the model reads the
-   * text and self-corrects, so no screenshot or paid re-check is needed. Three
-   * failing commands in a row hand control to the user instead of looping.
+   * Fresh output counts as progress: the model reads the text and self-corrects,
+   * so no screenshot or paid re-check is needed. Three failing commands in a row,
+   * or five byte-identical outputs in a row, hand control to the user instead
+   * of looping; the third identical output first nudges the model to act.
    */
   private async runShellStep(signal: AbortSignal, generation: number, command: string, reuseId: string | null): Promise<void> {
     const port = this.dependencies.shell!;
@@ -750,8 +769,30 @@ export class TaskController {
     if (!failed) {
       this.shellFailures = 0;
       this.phaseShellCommands.push(command);
+      // Same bytes back means the world did not change: the model is
+      // re-checking instead of acting (the T5 mkdir/screenshot ping-pong).
+      const signature = result.exitCode + '\n' + output;
+      if (signature === this.lastShellOutput) this.shellRepeatStreak += 1;
+      else {
+        this.lastShellOutput = signature;
+        this.shellRepeatStreak = 1;
+      }
+      if (this.shellRepeatStreak >= 5) {
+        this.shellRepeatStreak = 0;
+        const repeatReason = ('Five terminal commands in a row returned identical output. Last: $ ' + command.slice(0, 200) +
+          ' → exit ' + result.exitCode + ' (' + output.length + ' chars, unchanged). The agent is re-checking instead of acting.' +
+          ' Take control of the desktop, move the task forward, then resume - or stop the run.').slice(0, 1000);
+        this.learnFromHandoff(repeatReason);
+        this.yieldToUser({ kind: 'manual', reason: repeatReason });
+      } else if (this.shellRepeatStreak === 3) {
+        this.shellRepeatNote = 'Your last 3 terminal commands returned byte-identical output: the desktop state is not changing.' +
+          ' Do not run another checking command — take a different action that moves the goal forward' +
+          ' (work in the open app window, save the deliverable, or finish if the goal is met).';
+        this.record('stall', 'stalled', 'Same terminal output 3 times in a row; nudging the model to act instead of re-checking.');
+      }
       return;
     }
+    this.shellRepeatStreak = 0;
     if (++this.shellFailures >= 3) {
       this.shellFailures = 0;
       const shellReason = ('Three terminal commands failed in a row. Last: $ ' + command.slice(0, 200) +
@@ -911,6 +952,10 @@ export class TaskController {
       this.noProgressStreak = resumed.noProgressStreak;
       this.stallCycles = resumed.stallCycles ?? 0;
     }
+    // Repeat detection restarts after resume: the pre-resume output is not comparable.
+    this.lastShellOutput = null;
+    this.shellRepeatStreak = 0;
+    this.shellRepeatNote = null;
     this.clarifications = [...resumed.clarifications];
     this.resumedHistory = [...resumed.executedDescs,
       ...(resumed.lastVerification ? ['Last step result: ' + resumed.lastVerification] : [])];
@@ -1094,6 +1139,9 @@ export class TaskController {
     this.noProgressStreak = 0;
     this.stallCycles = 0;
     this.lastGuidance = null;
+    this.lastShellOutput = null;
+    this.shellRepeatStreak = 0;
+    this.shellRepeatNote = null;
     this.record('mission', 'info', 'Replanned after failure: ' + decision.phases.length + ' fresh phase(s).');
     this.update({ status: 'observing', message: 'Fresh plan ready. Continuing from a new screen observation.' });
     this.launch();

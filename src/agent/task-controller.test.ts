@@ -324,6 +324,46 @@ describe('task lifecycle', () => {
       expect(controller.getSnapshot().handoff?.reason).toContain('Three terminal commands failed');
     });
 
+    it('nudges the model after three terminal commands return identical output', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'same-bytes' }));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValueOnce(shellDecision('ls')).mockResolvedValueOnce(shellDecision('ls'))
+        .mockResolvedValueOnce(shellDecision('ls')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(run).toHaveBeenCalledTimes(3);
+      const fourthHistory: string[] = model.decide.mock.calls[3]?.[0].history;
+      expect(fourthHistory.join('\n')).toContain('byte-identical');
+    });
+
+    it('hands control to the user after five terminal commands return identical output', async () => {
+      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'same-bytes' }));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValue(shellDecision('ls'));
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+      expect(run).toHaveBeenCalledTimes(5);
+      expect(controller.getSnapshot().handoff?.reason).toContain('identical output');
+    });
+
+    it('resets the identical-output streak when terminal output changes', async () => {
+      const run = vi.fn()
+        .mockResolvedValueOnce(shellResult({ stdout: 'aaa' }))
+        .mockResolvedValueOnce(shellResult({ stdout: 'aaa' }))
+        .mockResolvedValueOnce(shellResult({ stdout: 'bbb' }))
+        .mockResolvedValueOnce(shellResult({ stdout: 'aaa' }))
+        .mockResolvedValueOnce(shellResult({ stdout: 'aaa' }));
+      const { controller, model } = setup({ shell: { run } });
+      model.decide.mockResolvedValueOnce(shellDecision('ls')).mockResolvedValueOnce(shellDecision('ls'))
+        .mockResolvedValueOnce(shellDecision('ls')).mockResolvedValueOnce(shellDecision('ls'))
+        .mockResolvedValueOnce(shellDecision('ls')).mockResolvedValue(finished);
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+      await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('verifying'));
+      expect(run).toHaveBeenCalledTimes(5);
+      const histories = model.decide.mock.calls.map(call => (call[0].history as string[]).join('\n'));
+      expect(histories.join('\n')).not.toContain('byte-identical');
+    });
+
     it('counts terminal commands against the action limit', async () => {
       const run = vi.fn().mockResolvedValue(shellResult({}));
       const { controller, model } = setup({ shell: { run } });
@@ -361,7 +401,8 @@ describe('task lifecycle', () => {
     });
 
     it('compacts step history after ten steps without losing the thread', async () => {
-      const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'ok' }));
+      // Distinct outputs per command: eleven identical outputs would honestly trip the check-loop detector.
+      const run = vi.fn(async (command: string) => shellResult({ stdout: 'output of ' + command }));
       const { controller, model } = setup({ shell: { run } });
       for (let i = 0; i < 11; i++) model.decide.mockResolvedValueOnce(shellDecision('echo ' + i));
       model.decide.mockResolvedValue(finished);
