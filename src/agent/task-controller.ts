@@ -87,6 +87,24 @@ export function compactStepLines(lines: string[]): string[] {
   return out;
 }
 
+/**
+ * Stable signature of one desktop batch for loop detection. Full text and
+ * coordinates included: varied data entry never matches, identical retries do.
+ */
+function batchSignature(actions: DesktopCommand[]): string {
+  return actions.map(item => {
+    switch (item.type) {
+      case 'type': return 'type:' + item.text.slice(0, 200);
+      case 'click': return 'click:' + Math.round(item.x / 25) + ',' + Math.round(item.y / 25) + ',' + item.button;
+      case 'double_click': return 'dclick:' + Math.round(item.x / 25) + ',' + Math.round(item.y / 25);
+      case 'keypress': return 'key:' + item.keys.join('+');
+      case 'scroll': return 'scroll:' + item.x + ',' + item.y + ',' + item.scroll_x + ',' + item.scroll_y;
+      case 'wait': return 'wait';
+      case 'screenshot': return 'shot';
+    }
+  }).join(' → ');
+}
+
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -102,6 +120,9 @@ export class TaskController {
   private shellRepeatStreak = 0;
   /** One-shot nudge consumed by the next decide() when shell output repeats. */
   private shellRepeatNote: string | null = null;
+  /** Last desktop batch signature; three identical batches in a row mean a save-style loop. */
+  private lastBatchSignature: string | null = null;
+  private batchRepeatStreak = 0;
   /** Last seen foreground window, narrated to the model so it knows where it is. */
   private lastWindowId: string | null = null;
   private lastWindowTitle: string | null = null;
@@ -161,6 +182,8 @@ export class TaskController {
     this.lastShellOutput = null;
     this.shellRepeatStreak = 0;
     this.shellRepeatNote = null;
+    this.lastBatchSignature = null;
+    this.batchRepeatStreak = 0;
     this.lastWindowId = null;
     this.lastWindowTitle = null;
     this.focusChanges = [];
@@ -438,6 +461,15 @@ export class TaskController {
         this.record('verify', verification.status === 'verified_success' ? 'success' : verification.status === 'stalled_no_change' ? 'stalled' : 'failure',
           verification.summary, { stepId: execution.actionIds.at(-1) ?? null, durationMs: captureMs + verifyMs });
         this.persistPhase();
+        if (!executionError && this.noteBatchRepeat(execution.actions)) {
+          const loopReason = ('Repeating the same input 3 times in a row (' +
+            execution.actions.map(item => this.dependencies.describe(item)).join(' → ').slice(0, 200) +
+            '). The step may already have worked — check the target app (a saved file may already exist), fix the screen, then resume - or stop the run.').slice(0, 1000);
+          this.record('stall', 'stalled', loopReason.slice(0, 200));
+          this.learnFromHandoff(loopReason);
+          this.yieldToUser({ kind: 'manual', reason: loopReason });
+          return;
+        }
         if (progressed) {
           this.noProgressStreak = 0;
           this.stallCycles = 0;
@@ -991,6 +1023,17 @@ export class TaskController {
     }
     this.lastWindowId = id;
     this.lastWindowTitle = observation.activeWindowTitle?.slice(0, 200) ?? null;
+  }
+
+  /** Tracks identical desktop batches: three in a row means a save-style loop. True when the streak trips. */
+  private noteBatchRepeat(actions: DesktopCommand[]): boolean {
+    const signature = batchSignature(actions);
+    if (signature === this.lastBatchSignature) this.batchRepeatStreak += 1;
+    else {
+      this.lastBatchSignature = signature;
+      this.batchRepeatStreak = 1;
+    }
+    return this.batchRepeatStreak >= 3;
   }
 
   private noteStepTag(message: string): void {

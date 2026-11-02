@@ -977,6 +977,45 @@ describe('task lifecycle', () => {
     expect(model.decide.mock.calls[1]?.[0].history).toContain('Last step result: PRISM: typed value not visible on screen.');
   });
 
+  it('hands to the user after repeating the identical batch three times', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValue({ ...proposed, actions: [
+      { type: 'keypress', keys: ['ctrl', 's'] },
+      { type: 'type', text: 'sales.ods' },
+      { type: 'keypress', keys: ['Enter'] },
+    ] });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(model.decide).toHaveBeenCalledTimes(3);
+    expect(controller.getSnapshot().handoff?.reason).toContain('Repeating the same input');
+  });
+
+  it('does not flag varied typing as a repeat loop', async () => {
+    const { controller, model } = setup();
+    model.decide
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Pen' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Book' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Bag' } });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(model.decide.mock.calls.length).toBeGreaterThanOrEqual(4));
+    expect(controller.getSnapshot().handoff?.reason ?? '').not.toContain('Repeating the same input');
+  });
+
+  it('treats near-identical clicks as the same repeated batch', async () => {
+    const { controller, desktop, model } = setup();
+    let flip = false;
+    const frameB = { ...frame, image: 'data:image/png;base64,ZGlmZmVyZW50' };
+    desktop.capture.mockImplementation(async () => (flip = !flip) ? frame : frameB);
+    model.decide
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 847, y: 512, button: 'left' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 851, y: 509, button: 'left' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 845, y: 511, button: 'left' } });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    expect(model.decide).toHaveBeenCalledTimes(3);
+    expect(controller.getSnapshot().handoff?.reason).toContain('Repeating the same input');
+  });
+
   it('moves the checklist pointer from a bracketed step tag', async () => {
     const { controller, model } = setup();
     model.plan.mockResolvedValueOnce({ phases: [{ domain: 'shared', goal: 'Do things', steps: ['Open app', 'Type text', 'Save file'], success: 'Done' }], inputTokens: 8, outputTokens: 4 });
