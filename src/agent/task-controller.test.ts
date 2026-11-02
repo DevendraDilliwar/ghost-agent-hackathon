@@ -815,7 +815,7 @@ describe('task lifecycle', () => {
     await flush();
     expect(model.verifyText).toHaveBeenCalledTimes(2);
     expect(model.decide).toHaveBeenCalledTimes(2);
-    expect(model.decide.mock.calls[1]?.[0].history).toContain('The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, then type again.');
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, select all first (Ctrl+A), then type again.');
     expect(controller.getSnapshot().status).toBe('needs_user');
     expect(controller.getSnapshot().handoff?.kind).toBe('manual');
   });
@@ -1005,7 +1005,10 @@ describe('task lifecycle', () => {
     const { controller, desktop, model } = setup();
     let flip = false;
     const frameB = { ...frame, image: 'data:image/png;base64,ZGlmZmVyZW50' };
-    desktop.capture.mockImplementation(async () => (flip = !flip) ? frame : frameB);
+    desktop.capture.mockImplementation(async () => {
+      flip = !flip;
+      return flip ? frame : frameB;
+    });
     model.decide
       .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 847, y: 512, button: 'left' } })
       .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 851, y: 509, button: 'left' } })
@@ -1014,6 +1017,16 @@ describe('task lifecycle', () => {
     await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
     expect(model.decide).toHaveBeenCalledTimes(3);
     expect(controller.getSnapshot().handoff?.reason).toContain('Repeating the same input');
+  });
+
+  it('injects the focused app profile into decide history', async () => {
+    const { controller, desktop, model } = setup();
+    desktop.capture.mockResolvedValue({ ...frame, activeWindowTitle: 'sales.ods - LibreOffice Calc' });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    const history = model.decide.mock.calls[0]?.[0].history.join('\n') ?? '';
+    expect(history).toContain('App notes (calc):');
+    expect(history).toContain('Ctrl+S');
   });
 
   it('moves the checklist pointer from a bracketed step tag', async () => {

@@ -21,7 +21,7 @@ describe('ErrorLoop recovery decisions', () => {
   it('retries a failed type with focus-recovery guidance', () => {
     const decision = loop.decide(context({ action: { type: 'type', text: 'secret' }, typeDetail: 'No text field visible.' }));
     expect(decision).toEqual({ kind: 'retry',
-      guidance: 'The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, then type again.' });
+      guidance: 'The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, select all first (Ctrl+A), then type again.' });
   });
 
   it('retries stalled clicks with the generic back-out guidance', () => {

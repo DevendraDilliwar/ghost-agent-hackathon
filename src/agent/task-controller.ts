@@ -4,6 +4,7 @@ import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contra
 import { MissionMemory } from './memory/mission-memory';
 import { SkillMemory } from './memory/skill-memory';
 import { CrossTaskMemory } from './memory/cross-task-memory';
+import { matchAppProfile } from './knowledge/app-profiles';
 import type { DesktopCommand, ScreenObservation } from '../shared/contracts/desktop';
 import type { GroundedElement, GroundingResult } from '../shared/contracts/grounding';
 import { defaultGroundingEngine } from './vision/ui-grounding';
@@ -120,7 +121,7 @@ export class TaskController {
   private shellRepeatStreak = 0;
   /** One-shot nudge consumed by the next decide() when shell output repeats. */
   private shellRepeatNote: string | null = null;
-  /** Last desktop batch signature; three identical batches in a row mean a save-style loop. */
+  /** Last progressed desktop batch signature; three identical in a row mean a save-style loop. Stalled batches go through recovery instead. */
   private lastBatchSignature: string | null = null;
   private batchRepeatStreak = 0;
   /** Last seen foreground window, narrated to the model so it knows where it is. */
@@ -461,7 +462,9 @@ export class TaskController {
         this.record('verify', verification.status === 'verified_success' ? 'success' : verification.status === 'stalled_no_change' ? 'stalled' : 'failure',
           verification.summary, { stepId: execution.actionIds.at(-1) ?? null, durationMs: captureMs + verifyMs });
         this.persistPhase();
-        if (!executionError && this.noteBatchRepeat(execution.actions)) {
+        // Progressed-but-circling (save dialog that opens/closes forever): the
+        // stall path only sees failures, so identical successful batches trip here.
+        if (progressed && this.noteBatchRepeat(execution.actions)) {
           const loopReason = ('Repeating the same input 3 times in a row (' +
             execution.actions.map(item => this.dependencies.describe(item)).join(' → ').slice(0, 200) +
             '). The step may already have worked — check the target app (a saved file may already exist), fix the screen, then resume - or stop the run.').slice(0, 1000);
@@ -546,6 +549,8 @@ export class TaskController {
     if (this.lastWindowId) {
       history.push('Focused window: #' + this.lastWindowId + (this.lastWindowTitle ? ' (' + this.lastWindowTitle + ')' : ''));
     }
+    const appProfile = matchAppProfile(this.lastWindowTitle);
+    if (appProfile) history.push('App notes (' + appProfile.id + '): ' + appProfile.notes);
     if (progressNote) history.push(progressNote);
     if (this.unmetNote) {
       history.push(this.unmetNote);

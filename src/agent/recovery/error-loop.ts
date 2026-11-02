@@ -39,7 +39,7 @@ const genericStall = 'The last action caused no visible change. Do not repeat it
 
 function guidanceFor(context: FailureContext): string {
   if (context.action.type === 'type' && context.typeDetail) {
-    return 'The last type failed (' + context.typeDetail.slice(0, 200) + '). Do not repeat it unchanged - back out (Escape), re-check focus, then type again.';
+    return 'The last type failed (' + context.typeDetail.slice(0, 200) + '). Do not repeat it unchanged - back out (Escape), re-check focus, select all first (Ctrl+A), then type again.';
   }
   switch (context.action.type) {
     case 'keypress':

@@ -21,6 +21,7 @@ const instructions = [
   'Never use run_shell for passwords, secrets, privilege escalation (no sudo or su), destructive commands, or fetching remote code into a shell. Read run_shell output as your observation: no screenshot follows a shell call.',
   'If the app you need is already open and focused, use it instead of opening it again. When you need a fresh terminal, open a new window or tab rather than reusing a busy one.',
   'To replace the contents of a focused field, select all first with Ctrl+A, then type the replacement value.',
+  'If a file save may already have worked, verify with run_shell (ls the folder) instead of saving again.',
   'Observe the supplied screenshot and executed-step summary on every request. Never assume hidden state.',
   'Never interact with Ghost Agent itself or its controls, enter credentials, disclose secrets, make purchases, or change production resources.',
   'Operate local desktop applications only. Never open or use a web browser (Firefox, Chrome, or any other); if a goal needs the web, stop with an explanation.',
