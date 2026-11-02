@@ -242,6 +242,11 @@ export class TaskController {
         message: 'Checking desktop and model access.',
       };
     }
+    if (this.attachments.length && !configuration.resume) {
+      const names = this.attachmentNames().join(', ');
+      this.state = { ...this.state, messages: [...this.state.messages,
+        { id: this.dependencies.id(), sender: 'agent', content: '📎 Attached ' + names + ' — reading ' + (this.attachments.length === 1 ? 'it' : 'them') + ' before acting.', timestamp: this.timestamp() }] };
+    }
     this.deadline = setTimeout(
       () => this.fail('The ' + configuration.maxMinutes + '-minute run limit was reached.'),
       configuration.maxMinutes * 60_000,
@@ -974,10 +979,17 @@ export class TaskController {
     }
   }
 
+  /** Bounded attachment names for model inputs (never the image bytes). */
+  private attachmentNames(): string[] {
+    return this.attachments.slice(0, 3).map(file => file.name.slice(0, 128));
+  }
+
   private async ensureIntent(signal: AbortSignal, generation: number): Promise<boolean> {
     this.update({ status: 'preparing', message: 'Understanding your goal before touching the desktop.' });
+    const attached = this.attachmentNames();
     const decision = await this.dependencies.model.parseIntent({
-      goal: this.state.goal, clarifications: [...this.clarifications], signal,
+      goal: this.state.goal, clarifications: [...this.clarifications],
+      ...(attached.length ? { attachments: attached } : {}), signal,
     });
     if (!this.current(generation, signal)) return false;
     const inputTokens = this.state.inputTokens + decision.inputTokens;
@@ -1032,7 +1044,9 @@ export class TaskController {
     }
     if (mission.getPlan().phases.length) return true;
     this.update({ status: 'preparing', message: 'Splitting your goal into phases.' });
-    const decision = await this.dependencies.model.plan({ goal: this.state.goal, signal });
+    const attached = this.attachmentNames();
+    const decision = await this.dependencies.model.plan({ goal: this.state.goal,
+      ...(attached.length ? { attachments: attached } : {}), signal });
     if (!this.current(generation, signal)) return false;
     const inputTokens = this.state.inputTokens + decision.inputTokens;
     const outputTokens = this.state.outputTokens + decision.outputTokens;
@@ -1295,7 +1309,9 @@ export class TaskController {
       (done.length ? '. Already done: ' + done.join(' | ').slice(0, 500) : '');
     let decision: PlanDecision;
     try {
-      decision = await this.dependencies.model.plan({ goal: this.state.goal, context, signal });
+      const attached = this.attachmentNames();
+      decision = await this.dependencies.model.plan({ goal: this.state.goal, context,
+        ...(attached.length ? { attachments: attached } : {}), signal });
     } catch {
       return false;
     }

@@ -137,12 +137,16 @@ export interface ModelPort {
   parseIntent(input: {
     goal: string;
     clarifications: string[];
+    /** Attached image names (never the bytes). Omit when the run has no attachments. */
+    attachments?: string[];
     signal: AbortSignal;
   }): Promise<IntentDecision>;
   plan(input: {
     goal: string;
     /** Replan context: failures and remaining work. Absent for the first plan. */
     context?: string;
+    /** Attached image names (never the bytes). Omit when the run has no attachments. */
+    attachments?: string[];
     signal: AbortSignal;
   }): Promise<PlanDecision>;
   readSource(input: {

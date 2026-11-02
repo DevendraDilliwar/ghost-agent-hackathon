@@ -1150,6 +1150,16 @@ describe('task lifecycle', () => {
     expect(model.verifySuccess.mock.calls[0]?.[0].condition).toContain('Pen 10 50');
   });
 
+  it('tells intent and planning about attachments and confirms the upload in chat', async () => {
+    const { controller, model } = setup({ sourceStore: { saveSource: vi.fn().mockResolvedValue([]) } });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      attachments: [{ name: 'bill.png', mime: 'image/png', data: 'aGk=' }] });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.parseIntent.mock.calls[0]?.[0].attachments).toEqual(['bill.png']);
+    expect(model.plan.mock.calls[0]?.[0].attachments).toEqual(['bill.png']);
+    expect(controller.getSnapshot().messages.map(message => message.content).join('\n')).toContain('📎 Attached bill.png');
+  });
+
   it('moves the checklist pointer from a bracketed step tag', async () => {
     const { controller, model } = setup();
     model.plan.mockResolvedValueOnce({ phases: [{ domain: 'shared', goal: 'Do things', steps: ['Open app', 'Type text', 'Save file'], success: 'Done' }], inputTokens: 8, outputTokens: 4 });

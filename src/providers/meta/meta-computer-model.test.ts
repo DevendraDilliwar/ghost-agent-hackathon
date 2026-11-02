@@ -265,6 +265,19 @@ describe('Meta computer-use adapter', () => {
     expect(result.intent.summary).toBe('Install VS Code');
   });
 
+  it('tells goal understanding about attached images so it never asks for a path', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 50, output_tokens: 20 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"summary":"Enter bill","params":{},"missing":[]}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    await model.parseIntent({ goal: 'Enter this bill in Calc', clarifications: [], attachments: ['bill.png'], signal: new AbortController().signal });
+    const body = String(request.mock.calls[0]![1]?.body);
+    expect(body).toContain('bill.png');
+    expect(body).toContain('never ask for a file path');
+    expect(body).not.toContain('aGk=');
+  });
+
   it('routes verification to the Wonder model when configured, keeping planning on Spark', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       status: 'completed', usage: { input_tokens: 60, output_tokens: 12 },
@@ -321,6 +334,18 @@ describe('Meta computer-use adapter', () => {
       { domain: 'gcp', goal: 'Deploy backend', steps: ['Create the service', 'Deploy'], success: 'Service URL serves traffic' },
     ]);
     expect(result).toMatchObject({ inputTokens: 45, outputTokens: 18 });
+  });
+
+  it('tells planning about attached images so it never plans to locate them', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 45, output_tokens: 18 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"phases":[{"domain":"shared","goal":"Enter bill","success":"Done"}]}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    await model.plan({ goal: 'Enter this bill', attachments: ['bill.png'], signal: new AbortController().signal });
+    const body = String(request.mock.calls[0]![1]?.body);
+    expect(body).toContain('bill.png');
+    expect(body).toContain('already available');
   });
 
   it('sends replan context so the model plans only remaining work', async () => {

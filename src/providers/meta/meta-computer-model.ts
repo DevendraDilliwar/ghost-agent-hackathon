@@ -40,6 +40,7 @@ const intentInstructions = [
   'Put every value the goal needs but does not state into missing. Never invent values.',
   'For each missing value ask one plain question the user can answer in seconds, with 1 to 4 short tappable options. Options are common-sense suggestions, never invented facts. The user may also type a custom answer.',
   'Use at most 3 questions with ids q1, q2, q3. Omit questions when missing is empty. Return every question this goal needs in this single response - ask all of them at once instead of one now and more later. Use at most 20 params and 20 missing names. Keep the summary under 500 characters, each question under 300 characters, each option under 100 characters, and each value under 200 characters.',
+  'Attached images named in the goal context are already loaded - never ask the user to upload them or provide a file path for them.',
 ].join(' ');
 
 const planInstructions = [
@@ -48,6 +49,7 @@ const planInstructions = [
   'You choose the domain labels yourself: one short lowercase label per system the goal touches (github, aws, tally, terminal, browser, or anything else the task needs), in execution order. Never force a task into an unrelated label.',
   'A simple single-system task gets exactly one phase with domain shared.',
   'Each phase goal states the outcome in that system. List up to 12 concrete steps in execution order (omit steps only for a trivial single-action phase). Every phase needs a success condition: the visible evidence on screen that proves it is done (a URL, a confirmation message, a visible state). Use 1 to 8 phases and keep each goal under 500 characters.',
+  'Attached images named in the goal context are already available - plan to use their contents, never to locate or open the image files.',
 ].join(' ');
 
 const successInstructions = [
@@ -133,24 +135,30 @@ export class MetaComputerModel implements ModelPort {
     const clarificationText = input.clarifications.length
       ? '\nUser clarifications:\n- ' + input.clarifications.join('\n- ')
       : '';
+    const attachedText = input.attachments?.length
+      ? '\nAttached images (already loaded, never ask for a file path): ' + input.attachments.slice(0, 3).join(', ').slice(0, 400)
+      : '';
     const response = await requestMeta(this.config, {
       // Same allowance as decisions: multi-step goals need room for reasoning plus the JSON.
       max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: intentInstructions,
       input: [{ role: 'user', content: [
-        { type: 'input_text', text: 'Goal: ' + input.goal + clarificationText + '\nReturn only the JSON object.' },
+        { type: 'input_text', text: 'Goal: ' + input.goal + clarificationText + attachedText + '\nReturn only the JSON object.' },
       ] }],
     }, input.signal, this.request);
     return parseIntentResponse(response);
   }
 
   async plan(input: Parameters<ModelPort['plan']>[0]) {
+    const attachedText = input.attachments?.length
+      ? '\nAttached images (already available, never plan to locate them): ' + input.attachments.slice(0, 3).join(', ').slice(0, 400)
+      : '';
     const response = await requestMeta(this.config, {
       // Same allowance as decisions: multi-phase goals need room for reasoning plus the JSON.
       max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: planInstructions,
       input: [{ role: 'user', content: [
         { type: 'input_text', text: 'Goal: ' + input.goal +
           (input.context ? '\nReplan context (plan ONLY the remaining work): ' + input.context.slice(0, 2000) : '') +
-          '\nReturn only the JSON object.' },
+          attachedText + '\nReturn only the JSON object.' },
       ] }],
     }, input.signal, this.request);
     return parsePlanResponse(response);
