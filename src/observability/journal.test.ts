@@ -33,9 +33,9 @@ describe('journal redaction', () => {
 describe('InMemoryJournal', () => {
   it('collects appended events in order', () => {
     const journal = new InMemoryJournal();
-    journal.append(createJournalEvent({ ...base, summary: 'first' }));
-    journal.append(createJournalEvent({ ...base, summary: 'second' }));
-    expect(journal.events.map(event => event.summary)).toEqual(['first', 'second']);
+    journal.append(createJournalEvent({ ...base, summary: 'first', outcome: 'info' }));
+    journal.append(createJournalEvent({ ...base, summary: 'second', outcome: 'failure' }));
+    expect(journal.events.map(event => event.summary)).toEqual(['verify: info', 'verify: failure']);
   });
 });
 
@@ -43,13 +43,14 @@ describe('FileJournal', () => {
   it('writes one parseable JSON object per line', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'nomcp-journal-'));
     const journal = new FileJournal(directory);
-    journal.append(createJournalEvent({ ...base, summary: 'first', inputTokens: 10 }));
-    journal.append(createJournalEvent({ ...base, summary: 'second', inputTokens: 20 }));
+    journal.append(createJournalEvent({ ...base, summary: 'first', outcome: 'info', inputTokens: 10 }));
+    journal.append(createJournalEvent({ ...base, summary: 'second', outcome: 'failure', inputTokens: 20 }));
     await journal.drain();
     const lines = (await readFile(join(directory, 'run-1.jsonl'), 'utf8')).trim().split('\n');
     expect(lines).toHaveLength(2);
-    expect(lines.map(line => JSON.parse(line).summary)).toEqual(['first', 'second']);
+    expect(lines.map(line => JSON.parse(line).summary)).toEqual(['verify: info', 'verify: failure']);
     expect(JSON.parse(lines[1]!).inputTokens).toBe(20);
+    expect(lines.join('')).not.toContain('second');
   });
 
   it('ignores events with unsafe runIds instead of writing outside the directory', async () => {

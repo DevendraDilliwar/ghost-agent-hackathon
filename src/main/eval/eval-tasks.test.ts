@@ -1,18 +1,18 @@
-import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EVAL_TASKS, clearStaleOffice, readOdtText } from './eval-tasks';
+import { EVAL_TASKS, readOdtText } from './eval-tasks';
 
-const probeAlive = (marker: string): boolean => {
-  try {
-    execFileSync('pgrep', ['-f', marker], { timeout: 5000 });
-    return true;
-  } catch {
-    return false;
-  }
-};
+function office(body: string, kind = 'text'): string {
+  return '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">' +
+    '<office:body><office:' + kind + '>' + body + '</office:' + kind + '></office:body></office:document-content>';
+}
+
+const writerXml = office('<text:p>Eval Note</text:p><text:p>The quick brown fox.</text:p>');
+const calcXml = office('<table:table>' + [10, 20, 30, 60].map((value, index) =>
+  '<table:table-row><table:table-cell office:value-type="float" office:value="' + value + '"' +
+    (index === 3 ? ' table:formula="of:=SUM([.A1:.A3])"' : '') + '><text:p>' + value + '</text:p></table:table-cell></table:table-row>').join('') + '</table:table>', 'spreadsheet');
 
 function freshRoot(): string {
   return mkdtempSync(join(tmpdir(), 'ghost-eval-test-'));
@@ -25,24 +25,6 @@ describe('eval tasks', () => {
       expect(task.maxSteps).toBeLessThanOrEqual(25);
       expect(task.maxMinutes).toBeLessThanOrEqual(8);
       expect(task.goal('/tmp/x')).toContain('/tmp/x');
-    }
-  });
-
-  it('clearStaleOffice kills only its pattern and never throws on zero matches', async () => {
-    const marker = 'ghost-stale-office-probe';
-    const child = spawn('/bin/bash', ['-c', `exec -a ${marker} sleep 30`], { stdio: 'ignore' });
-    try {
-      let found = false;
-      for (let i = 0; i < 20 && !found; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        found = probeAlive(marker);
-      }
-      expect(found).toBe(true);
-      expect(() => clearStaleOffice(marker)).not.toThrow();
-      expect(probeAlive(marker)).toBe(false);
-      expect(() => clearStaleOffice('ghost-no-such-office-probe')).not.toThrow();
-    } finally {
-      try { child.kill('SIGKILL'); } catch { /* already gone */ }
     }
   });
 
@@ -76,14 +58,13 @@ describe('eval tasks', () => {
 
   it('passes doc tasks with stubbed office content', () => {
     const root = freshRoot();
-    const xml = '<office:document><text:p>Eval Note</text:p><text:p>20G disk</text:p><table:formula>oooc:=SUM(A1:A3)</table:formula></office:document>';
     const deps = {
-      readOdtEntry: (file: string, entry: string) => entry === 'content.xml' ? xml
+      readOdtEntry: (file: string, entry: string) => entry === 'content.xml' ? (file.endsWith('.ods') ? calcXml : file.endsWith('disk-report.odt') ? office('<text:p>The filesystem size is 20G.</text:p>') : writerXml)
         : file.endsWith('.ods') ? 'application/vnd.oasis.opendocument.spreadsheet' : 'application/vnd.oasis.opendocument.text',
     };
     for (const task of [EVAL_TASKS[1]!, EVAL_TASKS[3]!, EVAL_TASKS[4]!]) task.setup(root);
     writeFileSync(join(root, 't2', 'note.odt'), 'fake-bytes');
-    writeFileSync(join(root, 't4', 'disk.txt'), 'Filesystem Size Used\n/dev/sda 20G 5G\n');
+    writeFileSync(join(root, 't4', 'disk.txt'), 'Filesystem Size Used Avail Use% Mounted on\n/dev/sda 20G 5G 15G 25% /\n');
     writeFileSync(join(root, 't4', 'disk-report.odt'), 'fake-bytes');
     writeFileSync(join(root, 't5', 'sum.ods'), 'fake-bytes');
     expect(EVAL_TASKS[1]!.verify(root, deps).pass).toBe(true);

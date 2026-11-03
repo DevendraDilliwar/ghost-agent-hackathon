@@ -117,3 +117,15 @@ describe('CheckpointStore', () => {
     expect(await store.load('m-1', 'phase-1')).toMatchObject({ completedSteps: [], activeStep: null });
   });
 });
+
+
+describe('checkpoint chronological selection', () => {
+  it('includes a newest mission beyond the first fifty filenames', async () => {
+    const store = new CheckpointStore(await mkdtemp(join(tmpdir(), 'mission-top-')));
+    await Promise.all(Array.from({ length: 55 }, (_, index) => store.saveMission({ missionId: 'a-' + index, goal: 'Synthetic mission', createdAt: index })));
+    await store.saveMission({ missionId: 'zzz-newest', goal: 'Newest synthetic mission', createdAt: 9999 });
+    const missions = await store.listMissions();
+    expect(missions).toHaveLength(50);
+    expect(missions[0]?.missionId).toBe('zzz-newest');
+  });
+});

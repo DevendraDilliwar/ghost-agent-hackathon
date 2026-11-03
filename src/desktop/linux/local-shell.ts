@@ -2,6 +2,15 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import type { ShellPort, ShellResult } from '../../agent/ports';
 
+/** Explicit GUI/session essentials only; provider and unrelated secrets never reach bash. */
+export function shellEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = { PATH: '/usr/local/bin:/usr/bin:/bin' };
+  for (const name of ['HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']) {
+    if (source[name]) result[name] = source[name];
+  }
+  return result;
+}
+
 const OUTPUT_LIMIT = 65536;
 const DEFAULT_TIMEOUT_MS = 30000;
 /** After the foreground shell exits, wait this long for trailing pipe output before returning. */
@@ -28,7 +37,7 @@ export class LocalShell implements ShellPort {
     const started = Date.now();
     return new Promise(resolve => {
       const child = spawn('/bin/bash', ['-c', command], {
-        cwd: homedir(), signal, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+        cwd: homedir(), env: shellEnvironment(), signal, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
       });
       let stdout = '';
       let stderr = '';

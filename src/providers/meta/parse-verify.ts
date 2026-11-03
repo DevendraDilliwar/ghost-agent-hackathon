@@ -1,4 +1,4 @@
-import type { VerifyDecision } from '../../agent/ports';
+import type { TypedVerifyDecision, VerifyDecision } from '../../agent/ports';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Meta returned an invalid verification response.');
@@ -10,7 +10,9 @@ function tokens(value: unknown): number {
   return value;
 }
 
-export function parseVerifyResponse(value: unknown): VerifyDecision {
+export function parseVerifyResponse(value: unknown, typed: true): TypedVerifyDecision;
+export function parseVerifyResponse(value: unknown, typed?: false): VerifyDecision;
+export function parseVerifyResponse(value: unknown, typed = false): VerifyDecision | TypedVerifyDecision {
   const response = record(value);
   if (response.status === 'incomplete') throw new Error('Meta stopped while verifying the screen. No further action was taken.');
   if (response.status === 'failed') throw new Error('Meta could not verify the screen. No further action was taken. Try again later.');
@@ -31,7 +33,7 @@ export function parseVerifyResponse(value: unknown): VerifyDecision {
   catch { throw new Error('Meta did not return verification as JSON. No further action was taken. Try again.'); }
   const verdict = record(parsed);
   for (const key of Object.keys(verdict)) {
-    if (!['confirmed', 'detail', 'doneSteps'].includes(key)) throw new Error('Meta returned an unsupported verification field. No further action was taken.');
+    if (!(typed ? ['confirmed', 'detail', 'observedText', 'destinationConfirmed', 'verifiedRows'] : ['confirmed', 'detail', 'doneSteps']).includes(key)) throw new Error('Meta returned an unsupported verification field. No further action was taken.');
   }
   if (typeof verdict.confirmed !== 'boolean') throw new Error('Meta returned an invalid verification result. No further action was taken.');
   const detail = verdict.detail;
@@ -46,6 +48,13 @@ export function parseVerifyResponse(value: unknown): VerifyDecision {
     }
     doneSteps = [...new Set(verdict.doneSteps)].sort((a, b) => (a as number) - (b as number)) as number[];
   }
-  return { confirmed: verdict.confirmed, detail, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
+  const base = { confirmed: verdict.confirmed, detail, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
     ...(doneSteps === undefined ? {} : { doneSteps }) };
+  if (!typed) return base;
+  if ((verdict.observedText !== null && (typeof verdict.observedText !== 'string' || verdict.observedText.length > 4000 || verdict.observedText.includes('\0'))) ||
+      typeof verdict.destinationConfirmed !== 'boolean' || typeof verdict.verifiedRows !== 'number' ||
+      !Number.isSafeInteger(verdict.verifiedRows) || verdict.verifiedRows < 0 || verdict.verifiedRows > 200) {
+    throw new Error('Meta returned invalid destination readback evidence.');
+  }
+  return { ...base, observedText: verdict.observedText, destinationConfirmed: verdict.destinationConfirmed, verifiedRows: verdict.verifiedRows };
 }

@@ -24,10 +24,10 @@ flowchart LR
 | **Observe** | Screenshot capture | Fresh screenshot of the selected desktop before every step. |
 | **Think** | Meta model, intent prompt | Goal text becomes structured params; missing values trigger a question, never a guess. |
 | **Decide** | Meta model, computer-use prompt | Exactly one next action (click, type, keypress, scroll, wait) per step. |
-| **Verify (PRISM)** | Pixel delta + Meta readback prompt | Stall detection on every action; typed values are read back from the screen. Two stagnant steps hand control to the user. |
+| **Verify (PRISM)** | Image-change heuristic + OCR/Meta readback | Stall detection on every action; typed values are read back from the screen. Two stagnant steps hand control to the user. |
 | **Hands** | OS input driver (X11) | Executes validated clicks, typing, and shortcuts. No reasoning here. |
 
-A UI-tag grounding seam exists for a future detector; it currently returns zero tags rather than guessing boxes.
+Optional AT-SPI accessibility grounding is disabled by default; the default screen-only mode returns zero tags. Explicitly enabling it reads UI labels and changes that observation boundary.
 
 ---
 
@@ -42,12 +42,12 @@ A UI-tag grounding seam exists for a future detector; it currently returns zero 
    - Timeline of per-action verdicts; tag counter reads 0 until a real detector is wired (no invented boxes).
 
 3. **🛡️ PRISM Closed-Loop Verification:**
-   - Pixel-delta stall detection on every action plus model readback of typed values.
+   - Encoded-image stall heuristics plus OCR or model readback of every typed value. Image changes alone never verify text.
    - One retry with a recovery note, then control returns to you instead of looping.
 
-4. **🔒 Hardware-Encrypted Credential Storage:**
+4. **🔒 Protected OS Credential Storage:**
    - Remembers API keys locally using OS native **DPAPI** (Windows) and **Keychain / Secret Service** (Linux/macOS).
-   - Zero plaintext storage; renderer web code never accesses raw credentials.
+   - Remembering is refused when protected storage is unavailable, including Linux basic_text. Use a session-only key instead; no weak encryption fallback is written.
 
 5. **📦 Universal Desktop Packaging:**
    - Built with Electron, React, and TypeScript.
@@ -76,6 +76,14 @@ pnpm install
 # 2. Run developer desktop app
 npm run dev
 ```
+
+### Execution and data boundaries
+
+The input driver supports one display in an isolated Ubuntu **X11** session. Wayland, ambiguous display identity, failed geometry/focus checks, and input errors stop dispatch. Windows packaging does not establish Windows input support.
+
+Default operation uses screenshots and mouse/keyboard input. Direct host shell access and accessibility grounding are off. `.env.example` documents the opt-in flags; enabled host commands run with the user's file/network privileges and always require individual review. These flags and the isolation checkbox do not create an OS sandbox. Provider safety checks require review even in autonomous mode.
+
+Goals, your text replies, action metadata, and attachment names stay in local history until that chat is deleted. Agent prose, command strings, terminal output, screenshots, photos, and mission context are omitted from default durable history/metadata. Photos are processed in memory. `GHOST_RETAIN_TASK_CONTENT=1` separately opts into task-content/checkpoint/learning retention and restart resume; old saved files remain untouched when this is off. Retained missions/learning have a separate lifecycle from deleting a chat. Never include passwords/secrets in tasks. Journals contain fixed event summaries and counters. Existing legacy records are preserved as-is; these stricter defaults govern new writes. These local controls do not establish provider-side retention or residency guarantees.
 
 ### Run the Interactive Tally Demo Simulator
 ```bash

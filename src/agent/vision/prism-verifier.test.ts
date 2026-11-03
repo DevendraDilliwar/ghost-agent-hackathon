@@ -44,7 +44,7 @@ describe('PrismVerifier (Muse Wonder Supervisor)', () => {
     const verdict = verifier.verifyTransition(pre, post, clickAction);
     expect(verdict.status).toBe('verified_success');
     expect(verdict.visualDeltaPercent).toBeGreaterThan(0);
-    expect(verdict.summary).toContain('PRISM verified');
+    expect(verdict.summary).toContain('PRISM heuristic');
   });
 
   it('confirms window transition when activeWindowId changes', () => {

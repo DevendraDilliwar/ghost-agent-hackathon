@@ -1,4 +1,5 @@
 import { appendFile, mkdir } from 'node:fs/promises';
+import { FileOperations } from './file-operations';
 import { join } from 'node:path';
 import type { JournalEvent, JournalSink } from '../shared/contracts/journal';
 
@@ -10,7 +11,8 @@ const runIdPattern = /^[A-Za-z0-9-]{1,80}$/;
  * (missing dir, permissions, bad runId) is swallowed by design.
  */
 export class FileJournal implements JournalSink {
-  private readonly chains = new Map<string, Promise<void>>();
+  private readonly operations = new FileOperations();
+  get healthy(): boolean { return this.operations.healthy; }
   private readonly ready: Promise<void>;
 
   constructor(private readonly directory: string) {
@@ -24,15 +26,11 @@ export class FileJournal implements JournalSink {
     try {
       if (!runIdPattern.test(event.runId)) return;
       const file = join(this.directory, event.runId + '.jsonl');
-      const line = JSON.stringify(event) + '\n';
-      const prior = this.chains.get(file) ?? this.ready;
-      const next = prior
-        .then(() => appendFile(file, line, { mode: 0o600 }))
-        .then(
-          () => undefined,
-          () => undefined,
-        );
-      this.chains.set(file, next);
+      const line = JSON.stringify({ ...event, summary: event.stage + ': ' + event.outcome }) + '\n';
+      void this.operations.enqueue(file, async () => {
+        await this.ready;
+        await appendFile(file, line, { mode: 0o600 });
+      }).catch(() => undefined);
     } catch {
       // Journaling must never break the agent loop.
     }
@@ -40,7 +38,8 @@ export class FileJournal implements JournalSink {
 
   /** Resolves when all queued writes settle. Used by tests and shutdown. */
   async drain(): Promise<void> {
-    await Promise.all([...this.chains.values(), this.ready]);
+    await this.ready;
+    await this.operations.drain();
   }
 }
 

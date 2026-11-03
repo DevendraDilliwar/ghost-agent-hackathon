@@ -1,16 +1,6 @@
 import type { ScreenObservation } from '../../shared/contracts/desktop';
 import type { ElementDetector, GroundedElement, GroundingResult } from '../../shared/contracts/grounding';
 
-async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([work, new Promise<null>(resolve => {
-      timer = setTimeout(() => resolve(null), ms);
-    })]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 /**
  * UI Grounding Engine (detector seam)
@@ -30,10 +20,23 @@ export class UIGroundingEngine {
    */
   /** Raw element walk without framing. Lets callers overlap detection with capture. */
   async detectRaw(signal: AbortSignal = new AbortController().signal): Promise<GroundedElement[]> {
+    const child = new AbortController();
+    const abort = () => child.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    const timer = setTimeout(abort, this.timeoutMs);
+    if (signal.aborted) abort();
     try {
-      return (await withTimeout(this.detect(signal), this.timeoutMs)) ?? [];
+      child.signal.throwIfAborted();
+      return await new Promise<GroundedElement[]>(resolve => {
+        child.signal.addEventListener('abort', () => resolve([]), { once: true });
+        void this.detect(child.signal).then(elements => resolve(child.signal.aborted ? [] : elements), () => resolve([]));
+      });
     } catch {
       return [];
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      child.abort();
     }
   }
 

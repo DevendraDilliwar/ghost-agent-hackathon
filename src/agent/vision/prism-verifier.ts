@@ -15,19 +15,18 @@ export interface VerificationVerdict {
 }
 
 /**
- * Muse Wonder (PRISM) Visual Verification Supervisor
- * Closed-loop supervisor that inspects pre-action and post-action screen states
- * to confirm execution success, catch unexpected error popups, or detect lagging UI.
+ * PRISM stall heuristic. Encoded changes indicate activity, not successful
+ * typing, the absence of error dialogs, or semantic task completion.
  */
 export class PrismVerifier {
   /**
-   * Computes perceptual visual difference percentage between two screenshots.
+   * Computes an encoded-image change heuristic, not a perceptual pixel metric.
    */
   calculateVisualDelta(preImage: string, postImage: string): number {
     if (!preImage || !postImage) return 0;
     if (preImage === postImage) return 0;
 
-    // Fast perceptual sampling across base64 payload
+    // Sample encoded payloads only for stall detection; this cannot prove task success.
     const lenA = preImage.length;
     const lenB = postImage.length;
     const minLen = Math.min(lenA, lenB);
@@ -65,7 +64,7 @@ export class PrismVerifier {
       return {
         status: 'verified_success',
         visualDeltaPercent: visualDelta,
-        summary: `PRISM verified: Execution paused as planned (${visualDelta}% ambient delta).`,
+        summary: `PRISM verified: Execution paused as planned (encoded-change score ${visualDelta}/100).`,
         verifiedAt,
       };
     }
@@ -85,8 +84,8 @@ export class PrismVerifier {
     if (windowChanged) {
       return {
         status: 'verified_success',
-        visualDeltaPercent: Math.max(visualDelta, 15.0),
-        summary: `PRISM confirmed window transition (Window ID: ${post.activeWindowId}, +${visualDelta}% visual delta).`,
+        visualDeltaPercent: visualDelta,
+        summary: `PRISM heuristic: window transition (Window ID: ${post.activeWindowId}, encoded-change score ${visualDelta}/100).`,
         verifiedAt,
       };
     }
@@ -95,7 +94,7 @@ export class PrismVerifier {
     return {
       status: 'verified_success',
       visualDeltaPercent: visualDelta,
-      summary: `PRISM verified: Visual state successfully updated (+${visualDelta}% screen delta).`,
+      summary: `PRISM heuristic: encoded image changed (encoded-change score ${visualDelta}/100).`,
       verifiedAt,
     };
   }

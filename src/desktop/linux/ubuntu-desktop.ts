@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { desktopCapturer, screen } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { DesktopPort } from '../../agent/ports';
-import type { DesktopCommand, ScreenObservation } from '../../shared/contracts/desktop';
+import type { DesktopCommand, DesktopWindow, ScreenObservation } from '../../shared/contracts/desktop';
 import { executeX11Command, getRootGeometry, listWindows, runXdotool } from './xdotool';
 
 export class UbuntuDesktop implements DesktopPort {
@@ -14,15 +14,21 @@ export class UbuntuDesktop implements DesktopPort {
 
   async preflight(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
-    if (process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'x11') {
-      throw new Error('Desktop control currently requires an isolated Ubuntu X11 session. This Wayland/unknown session is not supported.');
+    if (process.platform !== 'linux') {
+      throw new Error('Desktop control currently requires an Ubuntu/Linux session.');
     }
-    if (screen.getAllDisplays().length !== 1) throw new Error('The first desktop driver requires one display.');
+    this.assertSupportedSession();
     await access('/usr/bin/xdotool', constants.X_OK).catch(() => { throw new Error('Install xdotool in the isolated Ubuntu environment before running tasks.'); });
     await getRootGeometry(signal);
   }
 
+  private assertSupportedSession(): void {
+    if (process.env.XDG_SESSION_TYPE !== 'x11') throw new Error('Desktop control requires an isolated Ubuntu X11 session.');
+    if (screen.getAllDisplays().length !== 1) throw new Error('Desktop control requires exactly one display.');
+  }
+
   async capture(signal: AbortSignal): Promise<ScreenObservation> {
+    this.assertSupportedSession();
     return this.withHiddenWindow(signal, async () => {
       const display = screen.getPrimaryDisplay();
       if (display.bounds.x !== 0 || display.bounds.y !== 0) throw new Error('The display must start at desktop coordinate (0, 0).');
@@ -38,7 +44,7 @@ export class UbuntuDesktop implements DesktopPort {
       const image = source.thumbnail.toPNG();
       if (image.byteLength > 8_000_000 || size.width < 1 || size.height < 1) throw new Error('The desktop screenshot is empty or too large.');
       const activeWindowId = await runXdotool(['getactivewindow'], signal);
-      if (!/^[0-9]+$/.test(activeWindowId)) throw new Error('Could not determine the foreground application.');
+      if (!/^[1-9][0-9]*$/.test(activeWindowId)) throw new Error('The foreground window could not be identified.');
       // Best-effort title: helps the model recognize apps, never blocks capture.
       let activeWindowTitle: string | null = null;
       try {
@@ -57,13 +63,14 @@ export class UbuntuDesktop implements DesktopPort {
   }
 
   async execute(action: DesktopCommand, observation: ScreenObservation, signal: AbortSignal): Promise<void> {
+    this.assertSupportedSession();
     await this.withHiddenWindow(signal, async () => {
       await executeX11Command(action, observation, signal);
       await delay(action.type === 'wait' ? 1000 : 200, undefined, { signal });
     });
   }
 
-  async listWindows(signal: AbortSignal): Promise<import('../../shared/contracts/desktop').DesktopWindow[]> {
+  async listWindows(signal: AbortSignal): Promise<DesktopWindow[]> {
     return listWindows(signal);
   }
 

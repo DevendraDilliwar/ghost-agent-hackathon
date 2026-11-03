@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { FileOperations, writeAtomic } from './file-operations';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDomainId } from '../shared/contracts/mission';
 import type { DomainId, MissionMeta, MissionSummary, PhaseCheckpoint, PhaseStatus } from '../shared/contracts/mission';
@@ -12,6 +13,10 @@ import type { ParsedIntent } from '../shared/contracts/task';
  * so a damaged checkpoint can never crash the agent loop.
  */
 export class CheckpointStore {
+  private readonly operations = new FileOperations();
+  get healthy(): boolean { return this.operations.healthy; }
+  drain(): Promise<void> { return this.operations.drain(); }
+
   constructor(private readonly baseDir: string) {}
 
   async saveMission(meta: MissionMeta): Promise<void> {
@@ -90,7 +95,8 @@ export class CheckpointStore {
           updatedAt: checkpoints.reduce((max, item) => Math.max(max, item.savedAt), meta.createdAt),
           phases: checkpoints.map(item => ({ phaseId: item.phaseId, domain: item.domain, goal: item.goal, status: item.status })),
         });
-        if (summaries.length >= 50) break;
+        summaries.sort((a, b) => b.updatedAt - a.updatedAt || a.missionId.localeCompare(b.missionId));
+        if (summaries.length > 50) summaries.pop();
       }
       return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch {
@@ -103,11 +109,8 @@ export class CheckpointStore {
   }
 
   private async writeJson(directory: string, file: string, value: unknown): Promise<void> {
-    await mkdir(directory, { recursive: true });
     const target = join(directory, file);
-    const tmp = target + '.tmp';
-    await writeFile(tmp, JSON.stringify(value), { mode: 0o600 });
-    await rename(tmp, target);
+    await this.operations.enqueue(target, () => writeAtomic(target, JSON.stringify(value)));
   }
 
   private async readBounded(file: string): Promise<string> {
@@ -167,6 +170,7 @@ function validCheckpoint(value: unknown, missionId: string, phaseId: string): Ph
   for (const key of ['inputTokens', 'outputTokens', 'noProgressStreak', 'savedAt'] as const) {
     if (typeof data[key] !== 'number' || !Number.isSafeInteger(data[key]) || (data[key] as number) < 0) return null;
   }
+  if (data.attemptedActions !== undefined && (typeof data.attemptedActions !== 'number' || !Number.isSafeInteger(data.attemptedActions) || data.attemptedActions < 0 || data.attemptedActions > 2000)) return null;
   // Stall-cycle counter: absent in checkpoints written before the cap, so default to 0.
   if (data.stallCycles !== undefined &&
     (typeof data.stallCycles !== 'number' || !Number.isSafeInteger(data.stallCycles) || data.stallCycles < 0)) return null;
@@ -184,6 +188,7 @@ function validCheckpoint(value: unknown, missionId: string, phaseId: string): Ph
     && typeof fillTotal === 'number' && Number.isSafeInteger(fillTotal) && fillTotal >= fillDone && fillTotal <= 200
     ? { fillDone, fillTotal } : {};
   return {
+    ...(data.attemptedActions === undefined ? {} : { attemptedActions: data.attemptedActions as number }),
     missionId, phaseId, order: data.order, domain: data.domain as DomainId, status: data.status as PhaseStatus,
     goal: data.goal, notes, steps, success: data.success, intent, clarifications, executedDescs,
     lastVerification: data.lastVerification as string | null,

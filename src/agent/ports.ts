@@ -38,6 +38,7 @@ export interface ModelDecision {
   readonly pendingActions?: unknown[];
   readonly message: string;
   readonly warnings: string[];
+  readonly pendingSafetyChecks?: import('../shared/contracts/task').PendingSafetyCheck[];
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly handoff?: UserHandoff;
@@ -56,6 +57,13 @@ export interface VerifyDecision {
   readonly doneSteps?: number[];
   readonly inputTokens: number;
   readonly outputTokens: number;
+}
+
+export interface TypedVerifyDecision extends VerifyDecision {
+  readonly observedText: string | null;
+  readonly destinationConfirmed: boolean;
+  /** Complete expected rows seen at the intended destination, never estimated from keystrokes. */
+  readonly verifiedRows: number;
 }
 
 export interface PlanDecision {
@@ -179,9 +187,12 @@ export interface ModelPort {
   }): Promise<FillPlanDecision>;
   verifyText(input: {
     text: string;
+    before: ScreenObservation;
+    destination: string;
+    expectedRows: readonly (readonly string[])[];
     observation: ScreenObservation;
     signal: AbortSignal;
-  }): Promise<VerifyDecision>;
+  }): Promise<TypedVerifyDecision>;
   verifySuccess(input: {
     condition: string;
     /** Numbered planned steps for the completion audit. Omit when the phase has none. */

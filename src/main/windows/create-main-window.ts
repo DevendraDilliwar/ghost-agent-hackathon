@@ -28,8 +28,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   secureWindow(controls, Boolean(developmentUrl));
   const runtime = createTaskRuntime(window, controls);
   const unregisterApplication = registerApplicationIpc(window, rendererUrl);
+  let closing = false;
   const openTask = () => {
-    if (window.isDestroyed()) return;
+    if (closing || window.isDestroyed()) return;
     if (window.isMinimized()) window.restore();
     controls.hide();
     window.show();
@@ -50,8 +51,14 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     const task = runtime.controller.getSnapshot();
     if (task.runId) runtime.controller.stop(task.runId);
   });
+  window.on('close', event => {
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    void runtime.dispose().finally(() => { if (!window.isDestroyed()) window.destroy(); });
+  });
   window.once('closed', () => {
-    runtime.dispose();
+    void runtime.dispose();
     unregisterTask(); unregisterControls(); unregisterApplication();
     controls.destroy();
   });

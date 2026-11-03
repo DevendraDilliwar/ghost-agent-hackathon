@@ -57,6 +57,7 @@ export interface PhaseContext {
 
 /** Durable per-phase snapshot. Redacted: descriptions and summaries only. */
 export interface PhaseCheckpoint {
+  readonly attemptedActions?: number;
   readonly missionId: string;
   readonly phaseId: string;
   /** Position in the plan; list() returns checkpoints in plan order. */

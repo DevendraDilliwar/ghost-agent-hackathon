@@ -103,7 +103,7 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
             />
           </div>
           <div className="settings-row">
-            <label htmlFor="meta-remember">Remember key on this device<span className="settings-row-description">Encrypted with your OS keychain. No plaintext keys are ever saved on disk.</span></label>
+            <label htmlFor="meta-remember">Remember key on this device<span className="settings-row-description">Requires a protected OS key store. If unavailable, leave this off for session-only use.</span></label>
             <input className="settings-switch" id="meta-remember" type="checkbox" role="switch" checked={rememberKey} onChange={event => setRememberKey(event.target.checked)} />
           </div>
           <div className="settings-row">
@@ -120,7 +120,7 @@ export function ConnectionSetup({ runtime }: { runtime: TaskRuntimeView }) {
             </div>
           </div>
           <p id="meta-key-help" className="settings-help">
-            When saved, credentials are encrypted using your operating system's native hardware DPAPI (Windows) or Keychain (Linux/Mac). No plaintext keys are ever saved on disk or exposed to the web.
+            Remembering requires protected OS storage (DPAPI on Windows, Keychain on macOS, or a Linux secret store). Weak fallbacks are refused. Older fallback files require key re-entry and are preserved until protected replacement succeeds.
           </p>
           {runtime.setupError && (
             <p role="alert" className="settings-error">

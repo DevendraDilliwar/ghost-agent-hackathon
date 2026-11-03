@@ -1,6 +1,6 @@
 import type { MetaModelId } from '../../shared/contracts/model';
 
-export interface MetaConfiguration { readonly apiKey: string; readonly model: MetaModelId; readonly verifyModel?: MetaModelId }
+export interface MetaConfiguration { readonly apiKey: string; readonly model: MetaModelId; readonly verifyModel?: MetaModelId; readonly hostShell?: boolean; readonly accessibility?: boolean }
 
 function transientError(message: string): Error {
   return Object.assign(new Error(message), { transient: true });

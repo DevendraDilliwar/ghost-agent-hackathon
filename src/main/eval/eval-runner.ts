@@ -19,18 +19,23 @@ import type { JournalEvent, JournalSink } from '../../shared/contracts/journal';
 import type { MetaModelId } from '../../shared/contracts/model';
 import type { TaskSnapshot } from '../../shared/contracts/task';
 import { loadStoredApiKey } from '../config/secure-store';
-import { EVAL_TASKS, clearStaleOffice, type EvalTask } from './eval-tasks';
+import { EVAL_TASKS, type EvalTask } from './eval-tasks';
+import { assertEvalIsolation, evalOutcome, prepareEvalOffice } from './eval-environment';
 
 export interface EvalResult {
   readonly id: string;
   readonly name: string;
   readonly kind: string;
   readonly success: boolean;
+  readonly artifactPass: boolean;
+  readonly autonomousPass: boolean;
   readonly verifyDetail: string;
   readonly status: string;
   readonly message: string;
   readonly lastActions: string[];
   readonly steps: number;
+  readonly attemptedActions: number;
+  readonly interventions: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly durationMs: number;
@@ -78,10 +83,10 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   const started = Date.now();
   const base = { id: task.id, name: task.name, kind: task.kind, workdir: ctx.root };
   try {
-    clearStaleOffice();
     task.setup(ctx.root);
+    await prepareEvalOffice(ctx.root, task.id);
   } catch (error) {
-    return { ...base, success: false, verifyDetail: 'setup failed: ' + message(error), status: 'setup-error', message: '',
+    return { ...base, ...evalOutcome(false, 'setup-error', false, 0), attemptedActions: 0, interventions: 0, verifyDetail: 'setup failed: ' + message(error), status: 'setup-error', message: '',
       lastActions: [], steps: 0, inputTokens: 0, outputTokens: 0, durationMs: Date.now() - started, stalls: 0, handoffs: 0,
       timedOut: false, journalFile: null };
   }
@@ -89,23 +94,24 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   let latest: TaskSnapshot | null = null;
   let handoff: string | null = null;
   let timedOut = false;
+  let interventions = 0;
   let finish: (() => void) | null = null;
   const done = new Promise<void>(resolve => { finish = resolve; });
   const controller = new TaskController({
-    checkpoints: ctx.checkpoints, journal, desktop: ctx.desktop, shell: new LocalShell(), skills: ctx.skills, ocr: new TesseractOcr(),
+    ...(process.env.GHOST_RETAIN_TASK_CONTENT === '1' ? { checkpoints: ctx.checkpoints } : {}), journal, desktop: ctx.desktop, ...(process.env.GHOST_ENABLE_HOST_SHELL === '1' ? { shell: new LocalShell() } : {}), skills: ctx.skills, ocr: new TesseractOcr(),
     model: {
-      decide: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).decide(input),
-      parseIntent: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).parseIntent(input),
-      plan: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).plan(input),
-      verifySuccess: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model, verifyModel: ctx.verifyModel }).verifySuccess(input),
-      verifyText: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model, verifyModel: ctx.verifyModel }).verifyText(input),
-      readSource: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).readSource(input),
-      extractFields: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).extractFields(input),
-      fillPlan: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).fillPlan(input),
+      decide: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).decide(input),
+      parseIntent: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).parseIntent(input),
+      plan: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).plan(input),
+      verifySuccess: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model, verifyModel: ctx.verifyModel }).verifySuccess(input),
+      verifyText: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model, verifyModel: ctx.verifyModel }).verifyText(input),
+      readSource: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).readSource(input),
+      extractFields: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).extractFields(input),
+      fillPlan: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).fillPlan(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,
-    grounding: new UIGroundingEngine(createAtspiDetector()),
+    grounding: new UIGroundingEngine(process.env.GHOST_ENABLE_ACCESSIBILITY === '1' ? createAtspiDetector() : undefined),
     changed: snapshot => {
       latest = snapshot;
       if (snapshot.status === 'verifying' && snapshot.awaitingCompletion && snapshot.runId) {
@@ -114,7 +120,8 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
         } catch {
           // Already settled.
         }
-      } else if (snapshot.status === 'needs_user') {
+      } else if (snapshot.status === 'needs_user' || snapshot.status === 'awaiting_approval') {
+        interventions += 1;
         handoff = snapshot.handoff ? snapshot.handoff.kind + ': ' + snapshot.handoff.reason.slice(0, 200) : 'unknown';
         try {
           if (snapshot.runId) controller.stop(snapshot.runId);
@@ -131,7 +138,8 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
     runId = controller.start({ goal: task.goal(ctx.root), maxSteps: task.maxSteps, maxMinutes: task.maxMinutes,
       approvalMode: 'full_access', screenConsent: true, isolatedEnvironment: true }).runId ?? null;
   } catch (error) {
-    return { ...base, success: false, verifyDetail: 'start failed: ' + message(error), status: 'start-error', message: '',
+    controller.dispose();
+    return { ...base, ...evalOutcome(false, 'start-error', false, 0), attemptedActions: 0, interventions: 0, verifyDetail: 'start failed: ' + message(error), status: 'start-error', message: '',
       lastActions: [], steps: 0, inputTokens: 0, outputTokens: 0, durationMs: Date.now() - started, stalls: 0, handoffs: 0,
       timedOut: false, journalFile: null };
   }
@@ -169,7 +177,9 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   } catch (error) {
     verdict = { pass: false, detail: 'verify threw: ' + message(error) };
   }
-  return { ...base, success: verdict.pass,
+  controller.dispose();
+  return { ...base, ...evalOutcome(verdict.pass, snapshot.status, timedOut, interventions), interventions,
+    attemptedActions: snapshot.attemptedActions ?? executed,
     verifyDetail: verdict.detail + (handoff ? ' Handoff: ' + handoff : '') + (timedOut ? ' (eval timeout)' : ''),
     status: snapshot.status, message: snapshot.message.slice(0, 500),
     lastActions: snapshot.actions.slice(-5).map(action => action.status + ': ' + action.description.slice(0, 120)),
@@ -183,6 +193,8 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
  * completes (task failures are data), 2 on config errors, 1 on crashes.
  */
 export async function runEvalCli(): Promise<number> {
+  try { assertEvalIsolation(); }
+  catch (error) { console.error(message(error)); return 2; }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const root = join(tmpdir(), 'ghost-eval-' + stamp + '-' + process.pid);
   mkdirSync(root, { recursive: true });
@@ -217,9 +229,10 @@ export async function runEvalCli(): Promise<number> {
     const outDir = join(process.cwd(), 'eval-results');
     mkdirSync(outDir, { recursive: true });
     const outFile = join(outDir, 'eval-' + stamp + '.json');
-    writeFileSync(outFile, JSON.stringify({ stamp, root, results }, null, 2));
+    writeFileSync(outFile, JSON.stringify({ acceptanceVersion: 2, stamp, root, results }, null, 2));
     const passed = results.filter(result => result.success).length;
     console.log('\nScorecard: ' + passed + '/' + results.length + ' passed. JSON: ' + outFile);
+    console.log('Reset the disposable eval session to clean up office fixtures; no unrelated processes were terminated.');
   } finally {
     try {
       hidden.destroy();

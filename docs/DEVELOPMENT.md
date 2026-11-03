@@ -92,11 +92,11 @@ The credential above is a placeholder. The supported comparison model is `muse-w
 
 The source checklist describes implemented code. RUNTIME-007 is the acceptance gate for a working desktop agent.
 
-Each computer-use model request is an independent one-step decision using the current screenshot, goal, and action summary with `store: false`. Only the first proposed action is considered, and it still needs user approval. This avoids running a long plan across changed screens. Provider retention guarantees must be checked separately; the app does not promise fully local processing.
+Each computer-use model request is an independent one-step decision using the current screenshot, goal, and action summary with `store: false`. Visual requests always include their current screenshot, including unchanged frames. Autonomous mode can execute a bounded batch; manual mode and provider safety checks review one action at a time. This avoids running a long plan across changed screens. Provider retention guarantees must be checked separately; the app does not promise fully local processing.
 
 One-step requests use low reasoning and a 4,096-token output allowance, which includes reasoning tokens. Incomplete responses never dispatch input or trigger automatic retries. Known token-limit and content-filter reasons are displayed separately from unsupported response formats.
 
-The input adapter invokes only a fixed `xdotool` executable and supported argument lists. Typed content is supplied through stdin. Terminal commands are entered through visible terminal UI; the agent does not expose a hidden shell executor. This is not an OS sandbox: the test environment itself must be disposable, and input already submitted cannot be undone by Stop.
+The input adapter invokes only a fixed `xdotool` executable and supported argument lists. Typed content is supplied through stdin. Direct host shell execution is disabled by default. GHOST_ENABLE_HOST_SHELL=1 explicitly enables reviewed host commands with a restricted child environment; each command still needs approval. Optional accessibility grounding separately requires GHOST_ENABLE_ACCESSIBILITY=1. This is not an OS sandbox: the test environment itself must be disposable, and input already submitted cannot be undone by Stop.
 
 Screenshots, goals, and action text remain in memory for the current run until replaced or the app closes. Pause and user takeover clear the current screenshot and invalidate pending approvals. The model can call `request_user_help` for verification/login/clarification; recognition is model-assisted and not guaranteed. Take control is also available manually. No new captures/actions/model requests are dispatched while waiting; a request already sent cannot be recalled from Meta. Done — resume takes a fresh screenshot. The five-minute deadline still includes pauses and handoff time. No raw screenshot journal or credential persistence has been added. Export/redaction, detection of arbitrary manual interference, robust visual state-change checks, and broader desktop support remain pending.
 
@@ -151,3 +151,12 @@ Validation on Node 22.23.2 and npm 10.9.8:
 | Packaging and GitHub CI | Not executed |
 
 Source checks do not establish task success rate, speed, cost, isolation, or packaged behavior. Those still require the evaluation protocol in [demo and submission](DEMO_AND_SUBMISSION.md).
+
+
+## 2026-11-03 hardening validation boundary
+
+The root `TODO_backend-hardening.md` tracks the current source fixes and validation. `GHOST_RETAIN_TASK_CONTENT=0` keeps mission/learning/photo content in memory; restart mission resume requires explicit content retention. Goals and user replies remain in local chat history until chat deletion. Previously saved files are preserved. Journals use fixed event summaries; durable shell summaries omit commands/output. Native credential saving requires a protected OS backend and never falls back to a machine-metadata key.
+
+Local JSON operations are ordered per target and use unique private temporary files. History snapshot writes are coalesced while retaining the newest/terminal state. Controlled window close stops dispatch and waits up to five seconds for storage; abrupt power loss is not covered by that guarantee. Resuming a saved mission creates a new run with a fresh displayed action budget; pause/resume inside one run preserves its attempted-action count.
+
+Clean CI uses the committed pnpm lockfile and Node 24. Native X11 input, OS keyring integration, and one-second Stop behavior still require the supported desktop acceptance run; unit tests and a successful bundle do not prove them.

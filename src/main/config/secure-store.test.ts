@@ -1,10 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { safeStorage } from 'electron';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 vi.mock('electron', () => ({
   app: { getPath: () => tmpdir() },
   safeStorage: {
+    getSelectedStorageBackend: vi.fn(() => 'gnome_libsecret'),
     isEncryptionAvailable: vi.fn(() => true),
     encryptString: vi.fn((str: string) => Buffer.from('mock-encrypted:' + str)),
     decryptString: vi.fn((buf: Buffer) => buf.toString().replace('mock-encrypted:', '')),
@@ -18,6 +21,8 @@ describe('secure credential store', () => {
 
   beforeEach(async () => {
     await clearStoredApiKey(testFile);
+    vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true);
+    vi.mocked(safeStorage.getSelectedStorageBackend).mockReturnValue('gnome_libsecret');
   });
 
   afterEach(async () => {
@@ -52,4 +57,29 @@ describe('secure credential store', () => {
     await saveStoredApiKey('', testFile);
     expect(await hasStoredApiKey(testFile)).toBe(false);
   });
+  it('refuses remembering without protected native encryption and preserves old bytes', async () => {
+    await writeFile(testFile, Buffer.from([1, 2, 3]));
+    vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false);
+    await expect(saveStoredApiKey('dummy-new-key', testFile)).rejects.toThrow('session-only');
+    expect(await readFile(testFile)).toEqual(Buffer.from([1, 2, 3]));
+    expect(await loadStoredApiKey(testFile)).toBeNull();
+  });
+
+  it('rejects basic_text and never falls back after native encryption throws', async () => {
+    vi.mocked(safeStorage.getSelectedStorageBackend).mockReturnValue('basic_text');
+    await expect(saveStoredApiKey('dummy', testFile)).rejects.toThrow('session-only');
+    vi.mocked(safeStorage.getSelectedStorageBackend).mockReturnValue('gnome_libsecret');
+    vi.mocked(safeStorage.encryptString).mockImplementationOnce(() => { throw new Error('keyring unavailable'); });
+    await expect(saveStoredApiKey('dummy', testFile)).rejects.toThrow('keyring unavailable');
+    expect(await hasStoredApiKey(testFile)).toBe(false);
+  });
+
+  it('never auto-loads legacy weak records and replaces only after protected encryption succeeds', async () => {
+    await writeFile(testFile, Buffer.from([1, 99, 98]));
+    expect(await loadStoredApiKey(testFile)).toBeNull();
+    await saveStoredApiKey('replacement-dummy', testFile);
+    expect((await readFile(testFile))[0]).toBe(0);
+    expect(await loadStoredApiKey(testFile)).toBe('replacement-dummy');
+  });
+
 });

@@ -1,5 +1,5 @@
 import type { AgentAction, ApprovalMode, RunAttachmentInput, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
-import type { CheckpointPort, DesktopPort, ExtractDecision, MemoryStorePort, ModelDecision, ModelPort, OcrPort, PlanDecision, ShellPort, SkillStorePort, SourceStorePort, VerifyDecision } from './ports';
+import type { CheckpointPort, DesktopPort, ExtractDecision, MemoryStorePort, ModelDecision, ModelPort, OcrPort, PlanDecision, ShellPort, SkillStorePort, SourceStorePort, TypedVerifyDecision, VerifyDecision } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import { SkillMemory } from './memory/skill-memory';
@@ -54,7 +54,7 @@ export interface ControllerDependencies {
 
 export function idleSnapshot(): TaskSnapshot {
   return {
-    runId: null, revision: 0, status: 'idle', goal: '', maxSteps: 15, maxMinutes: 5, actions: [],
+    runId: null, revision: 0, attemptedActions: 0, status: 'idle', goal: '', maxSteps: 15, maxMinutes: 5, actions: [],
     messages: [], screenshot: null, pendingActionId: null, message: 'Ready for a test task.',
     awaitingCompletion: false, handoff: null, inputTokens: 0, outputTokens: 0,
     groundedElements: [],
@@ -159,7 +159,6 @@ export class TaskController {
   private noProgressStreak = 0;
   private malformedStreak = 0;
   private replanCount = 0;
-  private lastSentFrame: string | null = null;
   private lastGrounding: { image: string; result: GroundingResult } | null = null;
   /** Consecutive stall handoffs without progress. Survives resume so a stuck run fails instead of looping forever. */
   private stallCycles = 0;
@@ -227,7 +226,6 @@ export class TaskController {
     this.lastGuidance = null;
     this.unmetStreak = 0;
     this.unmetNote = null;
-    this.lastSentFrame = null;
     this.lastGrounding = null;
     this.replanCount = 0;
     this.phaseShellCommands = [];
@@ -441,6 +439,7 @@ export class TaskController {
       if (!this.current(generation, signal)) return null;
     }
     const reading = await this.dependencies.model.readSource({ image, signal });
+    if (!this.current(generation, signal)) return null;
     const inputTokens = this.state.inputTokens + reading.inputTokens;
     const outputTokens = this.state.outputTokens + reading.outputTokens;
     this.state = { ...this.state, inputTokens, outputTokens };
@@ -501,7 +500,6 @@ export class TaskController {
    */
   private async ensureFillPlan(signal: AbortSignal, generation: number): Promise<boolean> {
     if (this.fillPlanned) return true;
-    this.fillPlanned = true;
     const queue = await this.dependencies.model.fillPlan({
       goal: this.state.goal, summary: this.state.intent?.summary ?? '',
       data: this.extracted ? formatExtracted(this.extracted) : '', signal,
@@ -515,6 +513,7 @@ export class TaskController {
       this.fail('The run token allowance was reached. No further actions will be dispatched.');
       return false;
     }
+    this.fillPlanned = true;
     this.fillUnits = queue.units.map(unit => [...unit.cells]);
     this.fillChunk = queue.chunkRows;
     this.fillStartHint = queue.startHint;
@@ -526,19 +525,17 @@ export class TaskController {
     return true;
   }
 
-  /**
-   * Marks fill-queue rows done after a verified bulk (tabbed) type. Rows are
-   * estimated from tab-separated cells over the queue width; single-cell
-   * types leave the marks alone. The final judge stays the source of truth.
-   */
-  private markFillChunk(actions: DesktopCommand[]): void {
-    if (!this.fillUnits.length || this.fillDone >= this.fillUnits.length) return;
-    const width = Math.max(1, this.fillUnits[0]?.length ?? 1);
-    let rows = 0;
-    for (const item of actions) {
-      if (item.type !== 'type' || !item.text.includes('\t')) continue;
-      rows += Math.max(1, Math.round(item.text.split('\t').length / width));
+  /** Only exact complete upcoming rows can be candidates for progress. */
+  private expectedFillRows(text: string): string[][] {
+    const rows = this.fillUnits.slice(this.fillDone, this.fillDone + this.fillChunk);
+    for (let count = 1; count <= rows.length; count++) {
+      const prefix = rows.slice(0, count);
+      if (prefix.flat().join('\t') === text) return prefix;
     }
+    return [];
+  }
+
+  private markFillChunk(rows: number): void {
     if (!rows) return;
     this.fillDone = Math.min(this.fillUnits.length, this.fillDone + rows);
     this.record('verify', 'success', 'Fill chunk marked (' + this.fillDone + ' of ' + this.fillUnits.length + ' rows).');
@@ -548,7 +545,9 @@ export class TaskController {
   private async advance(signal: AbortSignal, generation: number, execution?: BatchExecution): Promise<void> {
     try {
       await this.loadSkills();
+      if (!this.current(generation, signal)) return;
       await this.loadMemory();
+      if (!this.current(generation, signal)) return;
       if (this.pendingResume && !this.mission) {
         const ready = await this.ensureResumed(signal, generation);
         if (!ready || !this.current(generation, signal)) return;
@@ -567,9 +566,15 @@ export class TaskController {
       if (!this.current(generation, signal)) return;
       let failedActionId: string | null = null;
       let executionError: string | null = null;
+      if (execution && this.now() - execution.observation.capturedAt > 30_000) {
+        const staleIds = new Set(execution.actionIds);
+        this.state = { ...this.state, actions: this.state.actions.map(action => staleIds.has(action.id) ? { ...action, status: 'rejected' } : action) };
+        execution = undefined;
+      }
       if (execution) {
         for (let index = 0; index < execution.actions.length; index++) {
           try {
+            if (!this.reserveAttempt()) return;
             await this.dependencies.desktop.execute(execution.actions[index]!, execution.observation, signal);
           } catch (error) {
             if (!this.current(generation, signal)) return;
@@ -602,24 +607,18 @@ export class TaskController {
         let progressed = delta.status !== 'stalled_no_change';
         let typeDetail: string | null = null;
         let verifyMs = 0;
+        let verifiedFillRows = 0;
         const typed = execution.actions.filter((item): item is Extract<DesktopCommand, { type: 'type' }> => item.type === 'type');
-        if (typed.length && delta.status === 'verified_success') {
-          // The screen already shows typed output: skip the paid re-check.
-          progressed = true;
-          verification = { ...delta, summary: 'PRISM: typed value visible on screen (+' + delta.visualDeltaPercent + '% delta); paid re-check skipped.' };
-        } else if (typed.length) {
+        if (typed.length) {
           const verifyStart = this.now();
           const text = typed.map(item => item.text).join('\n');
-          const ocrHit = await this.ocrContains(observation, text, signal);
-          if (!this.current(generation, signal)) return;
-          let check: VerifyDecision;
-          if (ocrHit) {
-            check = { confirmed: true, detail: 'Local OCR found the typed value on screen.', inputTokens: 0, outputTokens: 0 };
-          } else {
-            const judged = await this.judgeTypedText(text, observation, signal, generation);
-            if (!judged || !this.current(generation, signal)) return;
-            check = judged;
-          }
+          const expectedRows = this.expectedFillRows(text);
+          const check = await this.judgeTypedText({ text, before: execution.observation, observation, signal, expectedRows,
+            destination: this.state.goal + '. Current phase: ' + (this.mission?.currentPhase()?.goal ?? '') +
+              '. Observed window: ' + (execution.observation.activeWindowTitle ?? execution.observation.activeWindowId) +
+              (this.fillUnits.length ? '. Entry location: ' + (this.fillStartHint || 'unknown; identify the selected starting cell') +
+                '. Next expected row number: ' + (this.fillDone + 1) : '') }, generation);
+          if (!check || !this.current(generation, signal)) return;
           verifyMs = this.now() - verifyStart;
           if (!this.current(generation, signal)) return;
           const verifyInputTokens = this.state.inputTokens + check.inputTokens;
@@ -630,9 +629,12 @@ export class TaskController {
             this.fail('The run token allowance was reached. No further actions will be dispatched.');
             return;
           }
-          if (check.confirmed) {
+          if (check.confirmed && check.destinationConfirmed && check.observedText === text &&
+              execution.observation.activeWindowId === observation.activeWindowId &&
+              Number.isSafeInteger(check.verifiedRows) && check.verifiedRows >= 0 && check.verifiedRows <= expectedRows.length) {
             progressed = true;
-            verification = { ...delta, status: 'verified_success', summary: 'PRISM: typed value confirmed on screen (+' + delta.visualDeltaPercent + '% screen delta).', verifiedAt: Date.now() };
+            verifiedFillRows = check.verifiedRows === expectedRows.length ? check.verifiedRows : 0;
+            verification = { ...delta, status: 'verified_success', summary: 'PRISM: typed value confirmed by readback.', verifiedAt: Date.now() };
           } else {
             progressed = false;
             typeDetail = check.detail;
@@ -650,14 +652,15 @@ export class TaskController {
           };
         }
         verification = { ...verification, summary: this.withTiming(verification.summary, captureMs + verifyMs) };
-        const batchIds = new Set(execution.actionIds);
+        const actionIds = execution.actionIds;
+        const batchIds = new Set(actionIds);
         const failedAt = failedActionId ? execution.actionIds.indexOf(failedActionId) : 0;
         this.state = {
           ...this.state,
           actions: this.state.actions.map(action => {
             if (!batchIds.has(action.id)) return action;
             if (executionError === null) return { ...action, status: 'executed', verification };
-            const position = execution.actionIds.indexOf(action.id);
+            const position = actionIds.indexOf(action.id);
             if (position >= 0 && position < failedAt) return { ...action, status: 'executed', verification };
             if (position === failedAt) return { ...action, status: 'failed', verification };
             return { ...action, status: 'failed', verification: { ...verification, summary: 'Skipped: earlier batch input failed.' } };
@@ -682,7 +685,7 @@ export class TaskController {
           this.noProgressStreak = 0;
           this.stallCycles = 0;
           this.lastGuidance = null;
-          this.markFillChunk(execution.actions);
+          this.markFillChunk(verifiedFillRows);
           // A bare look-around must not mask a shell check-loop: only a real
           // click, type, or keypress resets the identical-output streak.
           if (probe.type !== 'screenshot' && probe.type !== 'wait') this.shellRepeatStreak = 0;
@@ -724,6 +727,7 @@ export class TaskController {
    * text output alone and no screenshot is taken unless it asks for the screen.
    */
   private async decideNext(signal: AbortSignal, generation: number, observation: ScreenObservation | null, progressNote: string | null, groundingWork: Promise<GroundedElement[]> | null = null): Promise<void> {
+    if (!this.current(generation, signal)) return;
     const engine = this.dependencies.grounding ?? defaultGroundingEngine;
     let grounding: GroundingResult | null = null;
     if (observation) {
@@ -731,6 +735,7 @@ export class TaskController {
         grounding = this.lastGrounding.result;
       } else {
         grounding = await engine.groundScreen(observation, signal, groundingWork);
+        if (!this.current(generation, signal)) return;
         this.lastGrounding = { image: observation.image, result: grounding };
       }
     }
@@ -799,15 +804,9 @@ export class TaskController {
         '. Reuse these proven commands when they fit.');
     }
     const decideStart = this.now();
-    // Frame cache: an unchanged screenshot is not worth resending — the model
-    // already saw these exact bytes. Grounding text still goes (it is small
-    // and keeps click_tag working); validation uses the local frame.
-    const frameChanged = !observation || observation.image !== this.lastSentFrame;
-    if (observation && frameChanged) this.lastSentFrame = observation.image;
-    if (observation && !frameChanged) history.push('Screenshot unchanged since the last observation; decide from the executed steps above.');
     const decideInput = {
       goal: this.state.goal, history, signal,
-      ...(observation && frameChanged ? { observation } : {}),
+      ...(observation ? { observation } : {}),
       ...(grounding?.elements.length ? { grounding } : {}),
     };
     let decision: ModelDecision;
@@ -865,18 +864,18 @@ export class TaskController {
       return;
     }
 
-    const frame = observation ?? await this.freshCapture(signal, generation);
-    if (!frame || !this.current(generation, signal)) return;
+    if (!observation) {
+      const fresh = await this.freshCapture(signal, generation);
+      if (fresh && this.current(generation, signal)) await this.decideNext(signal, generation, fresh, 'Choose the next GUI action from this fresh screenshot.');
+      return;
+    }
+    const frame = observation;
+    const plannedActions = batch.length ? batch : pending.slice(0, 5);
     let planned: DesktopCommand[];
-    if (batch.length) {
-      planned = batch.map(item => this.dependencies.validateAction(item, frame));
-    } else {
-      try {
-        planned = pending.slice(0, 5).map(item => this.dependencies.validateAction(item, frame));
-      } catch {
-        this.fail('Meta returned an action outside the fresh screenshot. No input was dispatched.');
-        return;
-      }
+    try { planned = plannedActions.map(item => this.dependencies.validateAction(item, frame)); }
+    catch {
+      this.fail('Meta returned an action outside the fresh screenshot. No input was dispatched.');
+      return;
     }
     const elements = grounding?.elements ?? [];
     if (elements.length) {
@@ -887,14 +886,15 @@ export class TaskController {
         return snapped.x === item.x && snapped.y === item.y ? item : { ...item, x: snapped.x, y: snapped.y };
       });
     }
-    const room = this.state.maxSteps - this.state.actions.filter(item => item.status === 'executed').length;
+    const room = this.state.maxSteps - (this.state.attemptedActions ?? 0);
     if (room <= 0) {
       this.fail('The action limit was reached. No further input will be dispatched.');
       return;
     }
-    const isAuto = this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me';
-    // A batch runs blind from one screenshot: auto mode runs it whole, approval mode still reviews one action at a time.
-    const effective = (isAuto ? planned : planned.slice(0, 1)).slice(0, room);
+    const isAuto = (this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me') && !decision.pendingSafetyChecks?.length;
+    // A click or key can replace the target surface. Re-observe before any
+    // further action, including proposals returned in the same model response.
+    const effective = planned.slice(0, 1);
     const head = effective[0]!;
     this.record('decide', 'success', 'Decided ' + effective.length + ' action(s): ' + effective.map(item => item.type).join(' → '), { durationMs: this.lastDecideMs });
     const views: AgentAction[] = effective.map(item => ({
@@ -902,6 +902,7 @@ export class TaskController {
       type: item.type === 'keypress' ? 'key_press' : item.type === 'screenshot' ? 'verify' : item.type,
       description: this.dependencies.describe(item), timestamp: this.timestamp(),
       status: isAuto ? 'pending' : 'awaiting_approval',
+      ...(decision.pendingSafetyChecks?.length ? { pendingSafetyChecks: decision.pendingSafetyChecks } : {}),
       ...('x' in item ? { coordinates: { x: item.x, y: item.y } } : {}),
       ...('text' in item ? { text: item.text } : {}),
     }));
@@ -920,7 +921,7 @@ export class TaskController {
     this.pending = { action: head, observation: frame };
     this.update({
       status: 'awaiting_approval', pendingActionId: headView.id,
-      message: decision.warnings.length ? decision.warnings.join(' · ') : 'Review this action before it is executed.',
+      message: decision.pendingSafetyChecks?.length ? 'Provider safety review required before this action.' : decision.warnings.length ? decision.warnings.join(' · ') : 'Review this action before it is executed.',
       actions: [...this.state.actions.filter(item => item.status !== 'pending'), headView],
     });
   }
@@ -935,32 +936,26 @@ export class TaskController {
   }
 
   private async shellTurn(signal: AbortSignal, generation: number, rawCommand: string, warnings: string[]): Promise<void> {
+    if (!this.current(generation, signal)) return;
     if (!this.dependencies.shell) {
       this.fail('Terminal commands need a shell executor, which this host does not provide. Ask for desktop steps instead.');
       return;
     }
     const command = this.dependencies.validateShell(rawCommand);
-    const room = this.state.maxSteps - this.state.actions.filter(item => item.status === 'executed').length;
+    const room = this.state.maxSteps - (this.state.attemptedActions ?? 0);
     if (room <= 0) {
       this.fail('The action limit was reached. No further input will be dispatched.');
       return;
     }
-    const isAuto = this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me';
     this.record('decide', 'success', 'Decided 1 terminal command.', { durationMs: this.lastDecideMs });
-    if (!isAuto) {
-      const id = this.dependencies.id();
-      this.pendingShell = command;
-      this.update({
-        status: 'awaiting_approval', pendingActionId: id,
-        message: warnings.length ? warnings.join(' · ') : 'Review this terminal command before it runs.',
-        actions: [...this.state.actions.filter(item => item.status !== 'pending'),
-          { id, type: 'shell', description: ('$ ' + command).slice(0, 300), timestamp: this.timestamp(), status: 'awaiting_approval' }],
-      });
-      return;
-    }
-    await this.runShellStep(signal, generation, command, null);
-    if (!this.current(generation, signal)) return;
-    await this.decideNext(signal, generation, null, null);
+    const id = this.dependencies.id();
+    this.pendingShell = command;
+    this.update({
+      status: 'awaiting_approval', pendingActionId: id,
+      message: warnings.length ? warnings.join(' · ') : 'Review this terminal command before it runs.',
+      actions: [...this.state.actions.filter(item => item.status !== 'pending'),
+        { id, type: 'shell', description: '$ ' + command, timestamp: this.timestamp(), status: 'awaiting_approval' }],
+    });
   }
 
   private launchShell(command: string, actionId: string): void {
@@ -998,6 +993,7 @@ export class TaskController {
         : [...this.state.actions.filter(item => item.status !== 'pending'),
           { id, type: 'shell', description: ('$ ' + command).slice(0, 300), timestamp: this.timestamp(), status: 'pending' }],
     });
+    if (!this.reserveAttempt()) return;
     const result = await port.run(command, signal);
     if (!this.current(generation, signal)) return;
     const shellMs = this.now() - started;
@@ -1005,7 +1001,7 @@ export class TaskController {
     const excerpt = output ? output.slice(0, 1500) : '(no output)';
     const failed = result.exitCode !== 0 || result.timedOut;
     const verification = {
-      status: 'verified_success' as const,
+      status: failed ? 'human_intervention_needed' as const : 'verified_success' as const,
       visualDeltaPercent: 0,
       summary: this.withTiming('Shell exit ' + result.exitCode + (result.timedOut ? ' (timed out)' : '') +
         (result.truncated ? ' (output truncated)' : '') + ': ' + excerpt, shellMs, 'shell'),
@@ -1013,7 +1009,7 @@ export class TaskController {
     };
     this.state = {
       ...this.state,
-      actions: this.state.actions.map(item => item.id === id ? { ...item, status: 'executed', text: output.slice(0, 2000), verification } : item),
+      actions: this.state.actions.map(item => item.id === id ? { ...item, status: failed ? 'failed' : 'executed', text: output.slice(0, 2000), verification } : item),
     };
     this.unmetStreak = 0;
     this.noProgressStreak = 0;
@@ -1503,6 +1499,7 @@ export class TaskController {
       if (!store || !mission || !missionId || !phase) return;
       const plan = mission.getPlan();
       const checkpoint: PhaseCheckpoint = {
+        attemptedActions: this.state.attemptedActions ?? 0,
         missionId, phaseId: phase.phaseId,
         order: Math.max(0, plan.phases.findIndex(item => item.phaseId === phase.phaseId)),
         domain: phase.domain, goal: phase.goal, status: phase.status, notes: [...phase.notes],
@@ -1524,6 +1521,16 @@ export class TaskController {
     }
   }
 
+  private reserveAttempt(): boolean {
+    const attempted = this.state.attemptedActions ?? 0;
+    if (attempted >= this.state.maxSteps) {
+      this.fail('The action limit was reached. No further input will be dispatched.');
+      return false;
+    }
+    this.update({ attemptedActions: attempted + 1 });
+    return true;
+  }
+
   private isActive(): boolean {
     return !['idle', 'completed', 'stopped', 'failed'].includes(this.state.status);
   }
@@ -1537,34 +1544,21 @@ export class TaskController {
     this.persistPhase();
   }
 
-  /** Domain-scoped phase context for recovery stories. Never throws. */
-  /** Free typed-text check. False when OCR is missing, fails, or finds nothing. */
-  private async ocrContains(observation: ScreenObservation, text: string, signal: AbortSignal): Promise<boolean> {
-    const ocr = this.dependencies.ocr;
-    if (!ocr) return false;
-    try {
-      const seen = await ocr.readText(observation.image, signal);
-      const flat = seen.toLowerCase().replace(/\s+/g, ' ');
-      const lines = text.toLowerCase().split('\n').map(line => line.trim()).filter(line => line);
-      return lines.length > 0 && lines.every(line => flat.includes(line));
-    } catch {
-      return false;
-    }
-  }
-
   /** Paid typed-text judge with one retry; null when the run moved on. */
-  private async judgeTypedText(text: string, observation: ScreenObservation, signal: AbortSignal, generation: number): Promise<VerifyDecision | null> {
+  private async judgeTypedText(input: Parameters<ModelPort['verifyText']>[0], generation: number): Promise<TypedVerifyDecision | null> {
+    const { signal } = input;
     try {
-      return await this.dependencies.model.verifyText({ text, observation, signal });
+      return await this.dependencies.model.verifyText(input);
     } catch {
       if (!this.current(generation, signal)) return null;
       try {
-        return await this.dependencies.model.verifyText({ text, observation, signal });
+        return await this.dependencies.model.verifyText(input);
       } catch {
         if (!this.current(generation, signal)) return null;
         // Judge silent: the typed text may be on screen, so feed the
         // standard stall path instead of killing the run over one call.
-        return { confirmed: false, detail: 'The typed-text judge did not answer; treated as not visible.', inputTokens: 0, outputTokens: 0 };
+        return { confirmed: false, observedText: null, destinationConfirmed: false, verifiedRows: 0,
+          detail: 'The typed-text judge did not answer; treated as not visible.', inputTokens: 0, outputTokens: 0 };
       }
     }
   }

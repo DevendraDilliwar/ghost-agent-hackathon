@@ -25,6 +25,8 @@ export interface DesktopWindow {
 }
 
 export interface RuntimeReadiness {
+  readonly storageHealthy?: boolean;
+  readonly capabilities?: { readonly hostShell: boolean; readonly accessibility: boolean; readonly retainTaskContent: boolean };
   readonly ready: boolean;
   readonly modelConfigured: boolean;
   readonly modelVerified: boolean;

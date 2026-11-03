@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { FileOperations, writeAtomic } from './file-operations';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
@@ -9,6 +10,10 @@ import { join } from 'node:path';
  * with the reader (SkillMemory.restore), not here.
  */
 export class SkillStore {
+  private readonly operations = new FileOperations();
+  get healthy(): boolean { return this.operations.healthy; }
+  drain(): Promise<void> { return this.operations.drain(); }
+
   constructor(private readonly baseDir: string) {}
 
   async load(): Promise<unknown> {
@@ -29,11 +34,8 @@ export class SkillStore {
   }
 
   private async writeJson(directory: string, file: string, value: unknown): Promise<void> {
-    await mkdir(directory, { recursive: true });
     const target = join(directory, file);
-    const tmp = target + '.tmp';
-    await writeFile(tmp, JSON.stringify(value), { mode: 0o600 });
-    await rename(tmp, target);
+    await this.operations.enqueue(target, () => writeAtomic(target, JSON.stringify(value)));
   }
 
   private async readBounded(file: string): Promise<string> {

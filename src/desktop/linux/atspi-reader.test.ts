@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { sessionBus } from 'dbus-next';
+import { UIGroundingEngine } from '../../agent/vision/ui-grounding';
+import { describe, expect, it, vi } from 'vitest';
 import { createAtspiDetector } from './atspi-reader';
 import type { AtspiConnector, AtspiNode } from './atspi-reader';
+
+vi.mock('dbus-next', () => ({ sessionBus: vi.fn() }));
 
 function fakeNode(overrides?: Partial<AtspiNode>): AtspiNode {
   return {
@@ -77,5 +82,56 @@ describe('AT-SPI reader', () => {
     const detect = createAtspiDetector(fakeScope(root, chain));
     const elements = await detect(new AbortController().signal);
     expect(elements).toEqual([]);
+  });
+});
+
+
+describe('AT-SPI bus lifecycle', () => {
+  function fakeBus() {
+    return Object.assign(new EventEmitter(), { disconnect: vi.fn(), getProxyObject: vi.fn() });
+  }
+
+  it('contains initial connection error events instead of crashing the process', async () => {
+    const bus = fakeBus();
+    bus.getProxyObject.mockReturnValue(new Promise(() => undefined));
+    vi.mocked(sessionBus).mockImplementationOnce(() => {
+      queueMicrotask(() => bus.emit('error', new Error('denied bus')));
+      return bus as unknown as ReturnType<typeof sessionBus>;
+    });
+    await expect(createAtspiDetector()(new AbortController().signal)).resolves.toEqual([]);
+    expect(bus.disconnect).toHaveBeenCalledTimes(1);
+    expect(() => bus.emit('error', new Error('late disconnect error'))).not.toThrow();
+  });
+
+  it('closes a second bus when root proxy creation fails', async () => {
+    const initial = fakeBus();
+    initial.getProxyObject.mockResolvedValue({ getInterface: () => ({ GetAddress: async () => 'mock-address' }) });
+    const second = fakeBus();
+    second.getProxyObject.mockRejectedValue(new Error('no registry'));
+    vi.mocked(sessionBus).mockReturnValueOnce(initial as unknown as ReturnType<typeof sessionBus>).mockReturnValueOnce(second as unknown as ReturnType<typeof sessionBus>);
+    await expect(createAtspiDetector()(new AbortController().signal)).resolves.toEqual([]);
+    expect(initial.disconnect).toHaveBeenCalledOnce();
+    expect(second.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('aborts a hung connection on detector timeout and disconnects its bus', async () => {
+    const bus = fakeBus();
+    bus.getProxyObject.mockReturnValue(new Promise(() => undefined));
+    vi.mocked(sessionBus).mockReturnValueOnce(bus as unknown as ReturnType<typeof sessionBus>);
+    const engine = new UIGroundingEngine(createAtspiDetector(), 5);
+    await expect(engine.detectRaw()).resolves.toEqual([]);
+    expect(bus.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('closes the scope and returns promptly if a tree method hangs on Stop', async () => {
+    const close = vi.fn();
+    const controller = new AbortController();
+    const detector = createAtspiDetector({ connect: async () => ({ root: fakeNode({ roleName: () => new Promise(() => undefined) }), node: async () => fakeNode(), close }) });
+    const pending = detector(controller.signal);
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort();
+    await expect(pending).resolves.toEqual([]);
+    expect(close).toHaveBeenCalled();
   });
 });

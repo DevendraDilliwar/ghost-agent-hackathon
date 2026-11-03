@@ -17,7 +17,7 @@ export interface AtspiScope {
 }
 
 export interface AtspiConnector {
-  connect(): Promise<AtspiScope>;
+  connect(signal: AbortSignal): Promise<AtspiScope>;
 }
 
 interface Box {
@@ -125,36 +125,88 @@ function wrapNode(obj: DbUsObject): AtspiNode {
     if (!fn) throw new Error('Missing D-Bus method ' + iface + '.' + name + '.');
     return fn(...args);
   };
+  const property = async (name: string, signature: 's' | 'i'): Promise<unknown> => {
+    const raw = await call('org.freedesktop.DBus.Properties', 'Get', 'org.a11y.atspi.Accessible', name);
+    if (!raw || typeof raw !== 'object') throw new Error('Invalid AT-SPI property.');
+    const variant = raw as { signature?: unknown; value?: unknown };
+    if (variant.signature !== signature || (signature === 's' ? typeof variant.value !== 'string'
+      : typeof variant.value !== 'number' || !Number.isSafeInteger(variant.value) || variant.value < 0)) {
+      throw new Error('Invalid AT-SPI property.');
+    }
+    return variant.value;
+  };
   return {
     roleName: () => call('org.a11y.atspi.Accessible', 'GetRoleName'),
-    name: () => call('org.a11y.atspi.Accessible', 'GetName'),
+    name: () => property('Name', 's'),
     extents: () => call('org.a11y.atspi.Component', 'GetExtents', 0),
-    childCount: () => call('org.a11y.atspi.Accessible', 'GetChildCount'),
+    childCount: () => property('ChildCount', 'i'),
     childAt: (index: number) => call('org.a11y.atspi.Accessible', 'GetChildAtIndex', index),
   };
 }
 
-async function connectDbusScope(): Promise<AtspiScope> {
-  const session = sessionBus();
-  let address: string | null;
+/** Race I/O with cancellation without leaving an unhandled late rejection. */
+function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) { void work.catch(() => undefined); return Promise.reject(signal.reason); }
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    void work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
+
+function managedBus(signal: AbortSignal, busAddress?: string) {
+  signal.throwIfAborted();
+  const bus = sessionBus(busAddress ? { busAddress } : undefined);
+  let rejectFailure!: (error: Error) => void;
+  const failure = new Promise<never>((_resolve, reject) => { rejectFailure = reject; });
+  void failure.catch(() => undefined);
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    signal.removeEventListener('abort', abort);
+    try { bus.disconnect(); } catch { /* A failed close must not escape a bus event. */ }
+  };
+  const abort = () => { rejectFailure(new Error('AT-SPI connection interrupted.')); close(); };
+  // Attach before any proxy request; keep the listener for late disconnect errors.
+  bus.on('error', () => { rejectFailure(new Error('AT-SPI connection unavailable.')); close(); });
+  signal.addEventListener('abort', abort, { once: true });
+  return { bus, close, request: <T>(work: Promise<T>) => abortable(Promise.race([work, failure]), signal) };
+}
+
+async function connectDbusScope(signal: AbortSignal): Promise<AtspiScope> {
+  const session = managedBus(signal);
+  let address: string;
   try {
-    const registry = await session.getProxyObject('org.a11y.Bus', '/org/a11y/bus');
+    const registry = await session.request(session.bus.getProxyObject('org.a11y.Bus', '/org/a11y/bus'));
     const getAddress = registry.getInterface('org.a11y.Bus').GetAddress;
     if (!getAddress) throw new Error('AT-SPI bus address unavailable.');
-    const raw: unknown = await getAddress();
-    address = typeof raw === 'string' && raw ? raw : null;
+    const raw: unknown = await session.request(getAddress());
+    if (typeof raw !== 'string' || !raw) throw new Error('AT-SPI bus address unavailable.');
+    address = raw;
   } finally {
-    session.disconnect();
+    session.close();
   }
-  if (!address) throw new Error('AT-SPI bus address unavailable.');
-  const bus = sessionBus({ busAddress: address });
-  bus.on('error', () => undefined);
-  const rootObj = await bus.getProxyObject('org.a11y.atspi.Registry', '/org/a11y/atspi/accessible/root');
-  return {
-    root: wrapNode(rootObj as unknown as DbUsObject),
-    node: async (busName: string, path: string) => wrapNode((await bus.getProxyObject(busName, path)) as unknown as DbUsObject),
-    close: () => bus.disconnect(),
-  };
+  const access = managedBus(signal, address);
+  try {
+    const root = await access.request(access.bus.getProxyObject('org.a11y.atspi.Registry', '/org/a11y/atspi/accessible/root'));
+    const guarded = (obj: DbUsObject): AtspiNode => {
+      const node = wrapNode(obj);
+      return {
+        roleName: () => access.request(node.roleName()), name: () => access.request(node.name()),
+        extents: () => access.request(node.extents()), childCount: () => access.request(node.childCount()),
+        childAt: index => access.request(node.childAt(index)),
+      };
+    };
+    return {
+      root: guarded(root as unknown as DbUsObject),
+      node: async (name: string, path: string) => guarded(await access.request(access.bus.getProxyObject(name, path)) as unknown as DbUsObject),
+      close: access.close,
+    };
+  } catch (error) {
+    access.close();
+    throw error;
+  }
 }
 
 /**
@@ -166,8 +218,13 @@ export function createAtspiDetector(connector?: AtspiConnector): (signal: AbortS
   return async signal => {
     let scope: AtspiScope | null = null;
     try {
-      scope = await source.connect();
-      return await walk(scope, signal);
+      signal.throwIfAborted();
+      const connecting = source.connect(signal);
+      void connecting.then(late => {
+        if (signal.aborted) { try { late.close(); } catch { /* Failed late connector cleanup. */ } }
+      }, () => undefined);
+      scope = await abortable(connecting, signal);
+      return await abortable(walk(scope, signal), signal);
     } catch {
       return [];
     } finally {

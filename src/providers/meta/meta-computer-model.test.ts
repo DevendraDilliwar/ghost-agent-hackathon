@@ -110,12 +110,12 @@ describe('Meta computer-use adapter', () => {
   it('keeps the whole batch with provider safety warnings for explicit action review', () => {
     const decision = parseMetaDecision({
       ...response,
-      output: [{ type: 'computer_call', actions: [{ type: 'wait' }, { type: 'screenshot' }], pending_safety_checks: [{ message: 'Review the action carefully.' }] }],
+      output: [{ type: 'computer_call', actions: [{ type: 'wait' }, { type: 'screenshot' }], pending_safety_checks: [{ id: 'safety-1', code: 'malicious_instructions', message: 'Review the action carefully.' }] }],
     }, frame);
     expect(decision.action).toEqual({ type: 'wait' });
     expect(decision.actions).toEqual([{ type: 'wait' }, { type: 'screenshot' }]);
-    expect(decision.warnings).toHaveLength(1);
-    expect(decision.warnings).toContain('Review the action carefully.');
+    expect(decision.warnings).toHaveLength(0);
+    expect(decision.pendingSafetyChecks).toEqual([{ id: 'safety-1', code: 'malicious_instructions', message: 'Review the action carefully.' }]);
   });
 
   it('caps a batch at five actions with a warning', () => {
@@ -177,14 +177,14 @@ describe('Meta computer-use adapter', () => {
       { id: 2, type: 'button' as const, label: 'Save', bounds: { x: 100, y: 200, width: 140, height: 36 }, center: { x: 170, y: 218 }, confidence: 0.9 },
     ], totalElements: 2, processedAt: 0 };
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ...response, output: [tagCall] })));
-    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const model = new MetaComputerModel({ apiKey: 'test-key', accessibility: true, model: 'muse-spark-1.3' }, request);
     const decision = await model.decide({ goal: 'test', observation: frame, history: [], grounding, signal: new AbortController().signal });
     expect(decision.action).toEqual({ type: 'click', x: 170, y: 218, button: 'left' });
     const tools = JSON.parse(String(request.mock.calls[0]![1]?.body)).tools.map((tool: { name?: string }) => tool.name);
     expect(tools).toContain('click_tag');
 
     const unknown = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ...response, output: [{ ...tagCall, arguments: JSON.stringify({ tag: 99 }) }] })));
-    const retryModel = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, unknown);
+    const retryModel = new MetaComputerModel({ apiKey: 'test-key', accessibility: true, model: 'muse-spark-1.3' }, unknown);
     const failure = await retryModel.decide({ goal: 'test', observation: frame, history: [], grounding, signal: new AbortController().signal }).then(
       () => { throw new Error('expected unknown tag to fail'); },
       (error: unknown) => error,
@@ -228,7 +228,7 @@ describe('Meta computer-use adapter', () => {
       status: 'completed', usage: { input_tokens: 40, output_tokens: 8 },
       output: [{ type: 'function_call', name: 'run_shell', arguments: JSON.stringify({ command: 'ls' }) }],
     })));
-    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const model = new MetaComputerModel({ apiKey: 'test-key', hostShell: true, model: 'muse-spark-1.3' }, request);
     const decision = await model.decide({ goal: 'List files', history: ['executed: $ pwd'], signal: new AbortController().signal });
     const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
     expect(JSON.stringify(body.input)).not.toContain('input_image');
@@ -291,10 +291,10 @@ describe('Meta computer-use adapter', () => {
   it('routes verification to the Wonder model when configured, keeping planning on Spark', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       status: 'completed', usage: { input_tokens: 60, output_tokens: 12 },
-      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"confirmed":true,"detail":"Text is visible."}' }] }],
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"confirmed":true,"detail":"Text is visible.","observedText":"75000","destinationConfirmed":true,"verifiedRows":0}' }] }],
     })));
     const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3', verifyModel: 'muse-wonder-1.0' }, request);
-    const result = await model.verifyText({ text: '75000', observation: frame, signal: new AbortController().signal });
+    const result = await model.verifyText({ text: '75000', before: frame, destination: 'Amount field', expectedRows: [], observation: frame, signal: new AbortController().signal });
     const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
     expect(body.model).toBe('muse-wonder-1.0');
     expect(result).toMatchObject({ confirmed: true, inputTokens: 60, outputTokens: 12 });
@@ -436,4 +436,30 @@ describe('Meta computer-use adapter', () => {
     expect(result.confirmed).toBe(true);
   });
 
+});
+
+describe('capability and safety boundaries', () => {
+  it('does not expose host shell or accessibility tools by default', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(response)));
+    await new MetaComputerModel({ apiKey: 'dummy', model: 'muse-spark-1.3' }, request).decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.tools.map((tool: { name?: string }) => tool.name)).not.toContain('run_shell');
+    expect(body.tools.map((tool: { name?: string }) => tool.name)).not.toContain('click_tag');
+    expect(body.instructions).toContain('Direct shell execution is disabled');
+    expect(body.instructions).not.toContain('call run_shell');
+  });
+
+  it('rejects a shell response when capability was not enabled', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ...response, output: [{ type: 'function_call', name: 'run_shell', arguments: '{"command":"printf test"}' }] })));
+    await expect(new MetaComputerModel({ apiKey: 'dummy', model: 'muse-spark-1.3' }, request).decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal })).rejects.toThrow('Host shell access is disabled');
+  });
+
+  it.each([
+    { message: 'missing identity/code' },
+    { id: 'check', code: 'unknown_check', message: 'unknown' },
+    { id: 'check', code: 'sensitive_domain', message: '' },
+    { id: 'check', code: 'sensitive_domain', message: 'review', extra: true },
+  ])('rejects unsupported safety metadata %#', check => {
+    expect(() => parseMetaDecision({ ...response, output: [{ ...response.output[0], pending_safety_checks: [check] }] }, frame)).toThrow('safety check');
+  });
 });

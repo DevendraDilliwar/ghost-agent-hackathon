@@ -63,8 +63,7 @@ describe('RunHistoryStore', () => {
         timestamp: 't', status: 'executed',
       }],
     }))!;
-    expect(record).toMatchObject({ messages: [{ id: 'm-1', content: 'done' }] });
-    expect(record.messages[0]).not.toHaveProperty('verificationImage');
+    expect(record.messages).toEqual([]);
     expect(record.actions[0]).not.toHaveProperty('text');
     expect(record.actions[0]).not.toHaveProperty('coordinates');
     expect(JSON.stringify(record)).not.toContain('s3cret');
@@ -126,5 +125,47 @@ describe('RunHistoryStore', () => {
     const capped = await store.listRuns();
     expect(capped).toHaveLength(50);
     expect(capped[0]!.runId).toBe('r-54');
+  });
+});
+
+describe('history hardening', () => {
+  it('round-trips shell actions and admitted boundary limits', async () => {
+    const store = new RunHistoryStore(await mkdtemp(join(tmpdir(), 'history-contract-')));
+    const record = toRunRecord(snapshot({ maxSteps: 2000, maxMinutes: 480, actions: [{ id: 'a', type: 'shell', description: '$ printf AUDIT_CANARY', text: 'AUDIT_CANARY', status: 'executed', timestamp: 't', verification: { status: 'verified_success', summary: 'AUDIT_CANARY', recoverySuggestion: 'AUDIT_CANARY', visualDeltaPercent: 0, verifiedAt: 1 } }] }))!;
+    await store.saveRun(record);
+    expect(await store.loadRun('run-1')).toMatchObject({ maxSteps: 2000, maxMinutes: 480, actions: [{ type: 'shell', description: 'Terminal command' }] });
+    expect(JSON.stringify(record)).not.toContain('AUDIT_CANARY');
+  });
+
+  it('keeps the last submitted state and orders deletion after concurrent saves', async () => {
+    const store = new RunHistoryStore(await mkdtemp(join(tmpdir(), 'history-concurrent-')));
+    const base = toRunRecord(snapshot())!;
+    await Promise.all(Array.from({ length: 30 }, (_, index) => store.saveRun({ ...base, status: index === 29 ? 'completed' : 'acting', inputTokens: index })));
+    expect(await store.loadRun('run-1')).toMatchObject({ status: 'completed', inputTokens: 29 });
+    const save = store.saveRun(base);
+    const deletion = store.deleteRun('run-1');
+    await Promise.all([save, deletion]);
+    await store.drain();
+    expect(await store.loadRun('run-1')).toBeNull();
+    expect(store.healthy).toBe(true);
+  });
+
+  it('reports write failure without throwing or claiming healthy persistence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'history-health-'));
+    const blocker = join(root, 'file');
+    await writeFile(blocker, 'block');
+    const store = new RunHistoryStore(join(blocker, 'invalid'));
+    await store.saveRun(toRunRecord(snapshot())!);
+    expect(store.healthy).toBe(false);
+  });
+
+  it('selects the true newest record beyond the old enumeration ceiling', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'history-top-'));
+    const store = new RunHistoryStore(root);
+    await Promise.all(Array.from({ length: 205 }, (_, index) => writeFile(join(root, `a-${index}.json`), JSON.stringify(storedRecord(`a-${index}`, index)))));
+    await writeFile(join(root, 'zzz-newest.json'), JSON.stringify(storedRecord('zzz-newest', 9999)));
+    const records = await store.listRuns();
+    expect(records).toHaveLength(50);
+    expect(records[0]?.runId).toBe('zzz-newest');
   });
 });

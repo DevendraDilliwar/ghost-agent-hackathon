@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { OcrPort } from '../../agent/ports';
@@ -16,12 +15,15 @@ export class TesseractOcr implements OcrPort {
     signal.throwIfAborted();
     const payload = /^data:image\/png;base64,([A-Za-z0-9+/=\s]+)$/.exec(image)?.[1];
     if (!payload) throw new Error('OCR needs a PNG screenshot.');
-    const file = join(tmpdir(), 'ghost-ocr-' + randomUUID() + '.png');
-    await writeFile(file, Buffer.from(payload.replace(/\s/g, ''), 'base64'));
+    const directory = await mkdtemp(join(tmpdir(), 'ghost-ocr-'));
     try {
+      await chmod(directory, 0o700);
+      const file = join(directory, 'screen.png');
+      await writeFile(file, Buffer.from(payload.replace(/\s/g, ''), 'base64'), { flag: 'wx', mode: 0o600, signal });
+      signal.throwIfAborted();
       return await this.recognize(file, signal);
     } finally {
-      await unlink(file).catch(() => undefined);
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 

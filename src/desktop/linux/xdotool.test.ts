@@ -28,6 +28,7 @@ beforeEach(() => {
     child.stdin.on('data', chunk => { typed += String(chunk); });
     queueMicrotask(() => {
       if (args[0] === 'getdisplaygeometry') child.stdout.write(geometry);
+      if (args[0] === 'getactivewindow') child.stdout.write('100');
       child.emit('close', exitCode);
     });
     return child as unknown as ReturnType<typeof spawn>;

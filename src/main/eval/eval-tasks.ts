@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { hasExpectedSum, inspectOffice, type OfficeContent } from './office-inspection';
 
 export interface EvalVerdict {
   readonly pass: boolean;
@@ -37,19 +38,6 @@ export function readOdtText(file: string): string | null {
   return readOdtEntry(file, 'content.xml');
 }
 
-/**
- * Kills office processes orphaned by an earlier task so a stale profile lock
- * never hangs the next task's launch or headless convert. Best effort: a
- * missing pkill, zero matches, and kill failures are all silently fine.
- */
-export function clearStaleOffice(pattern = 'soffice.bin'): void {
-  try {
-    execFileSync('pkill', ['-f', pattern], { timeout: 5000 });
-  } catch {
-    // Exit 1 (nothing matched) and a missing pkill are both fine.
-  }
-}
-
 function freshDir(root: string, name: string): string {
   const dir = join(root, name);
   rmSync(dir, { recursive: true, force: true });
@@ -57,26 +45,27 @@ function freshDir(root: string, name: string): string {
   return dir;
 }
 
-function odtVerdict(file: string, needle: RegExp | string, expectedMimetype: string, deps?: EvalTaskDeps): EvalVerdict {
+function odtVerdict(file: string, kind: 'text' | 'spreadsheet', accept: (content: OfficeContent) => boolean, deps?: EvalTaskDeps): EvalVerdict {
   if (!existsSync(file)) return { pass: false, detail: 'Missing file: ' + file };
   const size = statSync(file).size;
   const readEntry = deps?.readOdtEntry ?? readOdtEntry;
   const text = readEntry(file, 'content.xml');
   if (text === null) {
-    return size > 2000
-      ? { pass: true, detail: 'Exists (' + size + ' bytes); content unreadable without unzip, size-only check.' }
-      : { pass: false, detail: 'Too small (' + size + ' bytes) and content unreadable without unzip.' };
+    return { pass: false, detail: 'Content inspection unavailable or document unreadable; success cannot be verified.' };
   }
-  const found = typeof needle === 'string' ? text.includes(needle) : needle.test(text);
-  if (!found) return { pass: false, detail: 'Exists (' + size + ' bytes) but expected content is missing.' };
   // A hand-zipped file can carry the right XML but the wrong identity: only a
   // real LibreOffice document ships its mimetype entry at the zip root.
   const mimetype = readEntry(file, 'mimetype');
   if (mimetype === null) return { pass: false, detail: 'Content matches but the mimetype entry is missing — not a real LibreOffice file.' };
   const type = mimetype.trim();
-  return type === expectedMimetype
-    ? { pass: true, detail: 'Exists (' + size + ' bytes) with expected content.' }
-    : { pass: false, detail: 'Content matches but mimetype is "' + type.slice(0, 80) + '" — fabricated office file?' };
+  if (type !== 'application/vnd.oasis.opendocument.' + kind) return { pass: false, detail: 'Wrong mimetype — fabricated office file?' };
+  try {
+    return accept(inspectOffice(text, kind))
+      ? { pass: true, detail: 'Validated required office content (' + size + ' bytes).' }
+      : { pass: false, detail: 'Required office values, placement, or content are missing.' };
+  } catch {
+    return { pass: false, detail: 'Office content could not be safely inspected.' };
+  }
 }
 
 const terminalEcho: EvalTask = {
@@ -86,7 +75,7 @@ const terminalEcho: EvalTask = {
   verify: root => {
     const file = join(root, 't1', 'hello.txt');
     if (!existsSync(file)) return { pass: false, detail: 'Missing file: ' + file };
-    const content = readFileSync(file, 'utf8').trim();
+    const content = readFileSync(file, 'utf8').replace(/\r?\n$/, '');
     return content === 'hello eval'
       ? { pass: true, detail: 'File contains exactly "hello eval".' }
       : { pass: false, detail: 'Unexpected content: ' + JSON.stringify(content.slice(0, 100)) };
@@ -97,7 +86,8 @@ const writerDoc: EvalTask = {
   id: 'T2', name: 'writer-doc', kind: 'gui', maxSteps: 15, maxMinutes: 5,
   goal: root => 'Open LibreOffice Writer, write a document with the title "Eval Note" on the first line and "The quick brown fox." on the second line, and save it as ' + join(root, 't2', 'note.odt') + ' (create the folder first if needed)',
   setup: root => { freshDir(root, 't2'); },
-  verify: (root, deps) => odtVerdict(join(root, 't2', 'note.odt'), 'Eval Note', 'application/vnd.oasis.opendocument.text', deps),
+  verify: (root, deps) => odtVerdict(join(root, 't2', 'note.odt'), 'text', content =>
+    content.paragraphs.join('\n').replace(/\n+$/, '') === 'Eval Note\nThe quick brown fox.', deps),
 };
 
 const fileOrganize: EvalTask = {
@@ -115,7 +105,11 @@ const fileOrganize: EvalTask = {
     const text = join(root, 't3', 'text');
     const moved = existsSync(join(text, 'a.txt')) && existsSync(join(text, 'b.txt'));
     const kept = existsSync(join(inbox, 'c.log')) && !existsSync(join(inbox, 'a.txt')) && !existsSync(join(inbox, 'b.txt'));
-    if (moved && kept) return { pass: true, detail: '.txt files moved, c.log left in place.' };
+    if (moved && kept && readFileSync(join(text, 'a.txt'), 'utf8') === 'a\n' &&
+        readFileSync(join(text, 'b.txt'), 'utf8') === 'b\n' && readFileSync(join(inbox, 'c.log'), 'utf8') === 'c\n' &&
+        readdirSync(text).sort().join(',') === 'a.txt,b.txt' && readdirSync(inbox).join(',') === 'c.log') {
+      return { pass: true, detail: '.txt files moved with original content, c.log left unchanged.' };
+    }
     return { pass: false, detail: 'moved=' + moved + ' kept=' + kept };
   },
 };
@@ -128,8 +122,15 @@ const mixedReport: EvalTask = {
   verify: (root, deps) => {
     const disk = join(root, 't4', 'disk.txt');
     if (!existsSync(disk)) return { pass: false, detail: 'Missing file: ' + disk };
-    if (!readFileSync(disk, 'utf8').includes('Filesystem')) return { pass: false, detail: 'disk.txt is not df output.' };
-    return odtVerdict(join(root, 't4', 'disk-report.odt'), /[0-9]+(\.[0-9]+)?\s*G/, 'application/vnd.oasis.opendocument.text', deps);
+    const lines = readFileSync(disk, 'utf8').trim().split(/\r?\n/);
+    const columns = lines[1]?.trim().split(/\s+/) ?? [];
+    const size = columns[1];
+    if (!/^Filesystem\s+Size\s+Used\s+Avail\s+Use%\s+Mounted on$/.test(lines[0] ?? '') || columns.length !== 6 ||
+        columns[5] !== '/' || !size || !/^\d+(?:\.\d+)?[KMGTPEZY]?$/.test(size)) {
+      return { pass: false, detail: 'disk.txt is not supported df -h / output.' };
+    }
+    return odtVerdict(join(root, 't4', 'disk-report.odt'), 'text', content =>
+      new RegExp('(?:^|[^A-Za-z0-9.])' + size.replace('.', '\\.') + '(?=$|[^A-Za-z0-9.])').test(content.paragraphs.join('\n')), deps);
   },
 };
 
@@ -137,7 +138,7 @@ const calcSum: EvalTask = {
   id: 'T5', name: 'calc-sum', kind: 'gui', maxSteps: 25, maxMinutes: 8,
   goal: root => 'Open LibreOffice Calc, enter 10 in cell A1, 20 in A2, 30 in A3, put a SUM formula adding them in A4, and save as ' + join(root, 't5', 'sum.ods') + ' (create the folder first if needed)',
   setup: root => { freshDir(root, 't5'); },
-  verify: (root, deps) => odtVerdict(join(root, 't5', 'sum.ods'), 'SUM(', 'application/vnd.oasis.opendocument.spreadsheet', deps),
+  verify: (root, deps) => odtVerdict(join(root, 't5', 'sum.ods'), 'spreadsheet', hasExpectedSum, deps),
 };
 
 const archiveWeeks: EvalTask = {
@@ -158,15 +159,22 @@ const archiveWeeks: EvalTask = {
     for (const [dir, count] of Object.entries(expected)) {
       const folder = join(root, 't6', dir);
       if (!existsSync(folder)) return { pass: false, detail: 'Missing folder: ' + folder };
-      const files = readdirSync(folder).filter(file => file.endsWith('.' + dir));
+      const files = readdirSync(folder);
       if (files.length !== count) return { pass: false, detail: folder + ' holds ' + files.length + ' .' + dir + ' files, expected ' + count + '.' };
+      for (let index = 1; index <= count; index++) {
+        const file = (dir === 'txt' ? 'week' : dir === 'csv' ? 'data' : 'note') + index + '.' + dir;
+        const expectedContent = dir === 'txt' ? 'week ' + index + '\n' : dir === 'csv' ? 'a,b\n' : 'log\n';
+        if (!files.includes(file) || readFileSync(join(folder, file), 'utf8') !== expectedContent) {
+          return { pass: false, detail: 'Missing or altered archive file: ' + file };
+        }
+      }
     }
     if (readdirSync(join(root, 't6', 'inbox')).length !== 0) return { pass: false, detail: 'Inbox is not empty.' };
     const manifest = join(root, 't6', 'manifest.txt');
     if (!existsSync(manifest)) return { pass: false, detail: 'Missing file: ' + manifest };
     const text = readFileSync(manifest, 'utf8');
-    for (const [dir, count] of Object.entries(expected)) {
-      if (!text.includes(dir + ': ' + count)) return { pass: false, detail: 'manifest.txt is missing "' + dir + ': ' + count + '".' };
+    if (text.trim().split(/\r?\n/).sort().join('\n') !== ['txt: 6', 'csv: 3', 'log: 3'].sort().join('\n')) {
+      return { pass: false, detail: 'manifest.txt does not contain exactly the required folder counts.' };
     }
     return { pass: true, detail: '12 files sorted into 3 folders with a correct manifest.' };
   },

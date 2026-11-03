@@ -10,6 +10,7 @@ const stubs = vi.hoisted(() => ({
   saveKey: vi.fn(), loadKey: vi.fn(), clearKey: vi.fn(), hasKey: vi.fn(),
 }));
 vi.mock('electron', () => ({ globalShortcut: { register: stubs.register, unregister: stubs.unregister, isRegistered: stubs.isRegistered } }));
+vi.mock('../../desktop/linux/atspi-reader', () => ({ createAtspiDetector: () => async () => [] }));
 vi.mock('../../desktop/linux/ubuntu-desktop', () => ({ UbuntuDesktop: class {
   preflight = stubs.preflight;
   capture = stubs.capture;
@@ -40,6 +41,9 @@ const finished: ModelDecision = { action: null, message: 'Review the result.', w
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv('META_API_KEY', '');
+  vi.stubEnv('GHOST_ENABLE_HOST_SHELL', '0');
+  vi.stubEnv('GHOST_ENABLE_ACCESSIBILITY', '0');
+  vi.stubEnv('GHOST_RETAIN_TASK_CONTENT', '0');
   vi.stubEnv('GHOST_META_MODEL', 'muse-spark-1.3');
   registered.clear();
   stubs.register.mockImplementation((accelerator: string) => { registered.add(accelerator); return true; });
@@ -57,7 +61,8 @@ beforeEach(() => {
   stubs.parseIntent.mockResolvedValue({ intent: { summary: 'Test goal', params: {}, missing: [] }, inputTokens: 1, outputTokens: 1 });
   stubs.plan.mockResolvedValue({ phases: [{ domain: 'shared', goal: 'Test goal', steps: [], success: 'Goal visibly complete' }], inputTokens: 1, outputTokens: 1 });
   stubs.verifySuccess.mockResolvedValue({ confirmed: true, detail: 'Success visible.', inputTokens: 1, outputTokens: 1 });
-  stubs.verifyText.mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 1, outputTokens: 1 });
+  stubs.verifyText.mockImplementation(async input => ({ confirmed: true, observedText: input.text, destinationConfirmed: true,
+    verifiedRows: input.expectedRows.length, detail: 'Visible.', inputTokens: 1, outputTokens: 1 }));
   stubs.readSource.mockResolvedValue({ text: 'BILL-1 Total 100', lowConfidence: false, inputTokens: 1, outputTokens: 1 });
   stubs.extractFields.mockResolvedValue({ billNo: 'B-1', date: '12-Oct', total: '300', items: [], missing: [], inputTokens: 1, outputTokens: 1 });
   stubs.fillPlan.mockResolvedValue({ units: [], chunkRows: 5, startHint: '', inputTokens: 1, outputTokens: 1 });
@@ -166,8 +171,8 @@ describe('emergency Stop registration and task readiness', () => {
     expect(registered.has('Control+Shift+Escape')).toBe(true);
   });
 });
-afterEach(() => {
-  for (const runtime of runtimes.splice(0)) runtime.dispose();
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose()));
   vi.unstubAllEnvs();
 });
 
@@ -290,5 +295,42 @@ describe('saved-key auto-verification at startup', () => {
     await vi.waitFor(() => expect(runtime.connection.info()).toMatchObject({ configured: true, verified: true, source: 'environment' }));
     expect((await runtime.readiness()).ready).toBe(true);
     expect(stubs.probe).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('hardening runtime integration', () => {
+  it('reports default-off host/content capabilities without opening a real bus', async () => {
+    const runtime = setup();
+    expect((await runtime.readiness()).capabilities).toEqual({ hostShell: false, accessibility: false, retainTaskContent: false });
+    expect(await runtime.listMissions()).toEqual([]);
+  });
+
+  it('stops dispatch and flushes the terminal history before disposal resolves', async () => {
+    const runtime = setup();
+    await runtime.testConnection('fake-session-key');
+    stubs.decide.mockReturnValue(new Promise(() => undefined));
+    const started = runtime.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(runtime.controller.getSnapshot().status).toBe('thinking'));
+    const first = runtime.dispose();
+    expect(runtime.controller.getSnapshot().status).toBe('stopped');
+    expect(runtime.dispose()).toBe(first);
+    await first;
+    expect(await runtime.loadRun(started.runId!)).toMatchObject({ status: 'stopped' });
+    expect(stubs.execute).not.toHaveBeenCalled();
+    await expect(runtime.testConnection('replacement-key')).rejects.toThrow('closing');
+  });
+
+  it('does not restore credentials from a late saved-key read after disposal', async () => {
+    let resolveKey!: (key: string) => void;
+    stubs.hasKey.mockResolvedValue(true);
+    stubs.loadKey.mockReturnValue(new Promise(resolve => { resolveKey = resolve; }));
+    const runtime = setup();
+    await vi.waitFor(() => expect(stubs.loadKey).toHaveBeenCalled());
+    await runtime.dispose();
+    resolveKey('late-synthetic-key');
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(stubs.probe).not.toHaveBeenCalled();
+    expect(runtime.connection.info().configured).toBe(false);
   });
 });

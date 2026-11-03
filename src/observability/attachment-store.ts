@@ -1,3 +1,4 @@
+import { FileOperations } from './file-operations';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RunAttachmentInput, StoredAttachment } from '../shared/contracts/task';
@@ -21,10 +22,18 @@ function sanitizeName(name: string, index: number): string {
 }
 
 export class AttachmentStore {
+  private readonly operations = new FileOperations();
+  get healthy(): boolean { return this.operations.healthy; }
+  drain(): Promise<void> { return this.operations.drain(); }
   constructor(private readonly root: string) {}
 
+  saveAttachments(runId: string, files: readonly RunAttachmentInput[]): Promise<StoredAttachment[]> {
+    if (!/^[A-Za-z0-9-]{1,80}$/.test(runId)) return Promise.reject(new Error('Invalid run reference.'));
+    return this.operations.enqueue(join(this.root, runId), () => this.writeAttachments(runId, files));
+  }
+
   /** Persists validated chat attachments for one run. Returns local refs for the reader. */
-  async saveAttachments(runId: string, files: readonly RunAttachmentInput[]): Promise<StoredAttachment[]> {
+  private async writeAttachments(runId: string, files: readonly RunAttachmentInput[]): Promise<StoredAttachment[]> {
     if (!/^[A-Za-z0-9-]{1,80}$/.test(runId)) throw new Error('Invalid run reference.');
     if (files.length > MAX_FILES) throw new Error('Attach at most 3 images.');
     const dir = join(this.root, runId);
@@ -46,6 +55,7 @@ export class AttachmentStore {
   /** Removes a run's attachments. Missing directories are a no-op. */
   async pruneAttachments(runId: string): Promise<void> {
     if (!/^[A-Za-z0-9-]{1,80}$/.test(runId)) throw new Error('Invalid run reference.');
-    await rm(join(this.root, runId), { recursive: true, force: true });
+    const target = join(this.root, runId);
+    await this.operations.enqueue(target, () => rm(target, { recursive: true, force: true }));
   }
 }

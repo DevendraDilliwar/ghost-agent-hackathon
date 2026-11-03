@@ -25,6 +25,12 @@ export interface ActionVerification {
   readonly verifiedAt: number;
 }
 
+export interface PendingSafetyCheck {
+  readonly id: string;
+  readonly code: string;
+  readonly message: string;
+}
+
 export interface AgentAction {
   id: string;
   type: ActionType;
@@ -34,6 +40,7 @@ export interface AgentAction {
   text?: string;
   timestamp: string;
   status: 'pending' | 'awaiting_approval' | 'executed' | 'rejected' | 'failed';
+  pendingSafetyChecks?: PendingSafetyCheck[];
   riskLevel?: 'safe' | 'medium' | 'high';
   verification?: ActionVerification;
 }
@@ -98,6 +105,7 @@ export interface ParsedIntent {
 export interface TaskSnapshot {
   runId: string | null;
   revision: number;
+  attemptedActions?: number;
   status: AgentStatus;
   goal: string;
   maxSteps: number;

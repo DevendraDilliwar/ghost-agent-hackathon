@@ -85,7 +85,7 @@ export function createJournalEvent(input: {
     ts: input.ts ?? Date.now(),
     stage: input.stage,
     outcome: input.outcome,
-    summary: redactSummary(input.summary),
+    summary: input.stage + ': ' + input.outcome,
     ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
     ...(input.inputTokens === undefined ? {} : { inputTokens: input.inputTokens }),
     ...(input.outputTokens === undefined ? {} : { outputTokens: input.outputTokens }),

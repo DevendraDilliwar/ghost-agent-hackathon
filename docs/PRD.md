@@ -2,6 +2,8 @@
 
 Status: MVP specification with the first controller/provider/desktop source slice implemented. Live task-execution requirements below are not accepted as complete. The current build requires review of every action and user confirmation of the result. Platform: Ubuntu/Linux, selected by the project owner. Updated 2026-10-29.
 
+Current implementation boundary (2026-11-03): the original screen-only scope below is the default. Optional, explicitly enabled host shell/accessibility modes extend that boundary; they must be disclosed and used only in a disposable OS session. Shell commands and pending provider safety checks always require individual review. See README for retention defaults and flags. The root hardening TODO distinguishes implemented source changes from native acceptance.
+
 ## Objective and success
 
 Enable a user to give a setup goal, observe the agent execute it through the desktop interface, and receive evidence of completion. The measurable outcome is fewer manual execution steps with a reliable result. Evaluation targets are defined in [demo and submission](DEMO_AND_SUBMISSION.md); they are not current results.

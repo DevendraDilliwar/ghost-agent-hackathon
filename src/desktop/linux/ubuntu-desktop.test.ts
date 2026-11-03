@@ -1,19 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
-import { desktopCapturer } from 'electron';
+import { desktopCapturer, screen } from 'electron';
 import { UbuntuDesktop } from './ubuntu-desktop';
-import { executeX11Command, listWindows, runXdotool } from './xdotool';
+import { getRootGeometry, executeX11Command, listWindows, runXdotool } from './xdotool';
 
 vi.mock('electron', () => ({
   desktopCapturer: { getSources: vi.fn() },
-  screen: { getPrimaryDisplay: () => ({ id: 1, bounds: { x: 0, y: 0 } }) },
+  screen: { getAllDisplays: vi.fn(() => [{}]), getPrimaryDisplay: () => ({ id: 1, bounds: { x: 0, y: 0 } }) },
 }));
 vi.mock('./xdotool', () => ({
   getRootGeometry: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
   runXdotool: vi.fn().mockResolvedValue('100'), executeX11Command: vi.fn().mockResolvedValue(undefined),
   listWindows: vi.fn().mockResolvedValue([{ id: '100', title: 'Terminal' }]),
 }));
-afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
+beforeEach(() => { vi.stubEnv('XDG_SESSION_TYPE', 'x11'); vi.mocked(screen.getAllDisplays).mockReturnValue([{}] as never); });
+afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); vi.unstubAllEnvs(); });
 
 function surface(visible: boolean) {
   let shown = visible;
@@ -84,5 +85,37 @@ describe('desktop observation with floating controls', () => {
     const observation = await pending;
     expect(observation.activeWindowId).toBe('100');
     expect(observation.activeWindowTitle).toBeUndefined();
+  });
+});
+
+describe('desktop fail-closed support boundary', () => {
+  it('rejects Wayland and multiple displays before capture or input', async () => {
+    const desktop = new UbuntuDesktop(surface(true) as unknown as BrowserWindow);
+    vi.stubEnv('XDG_SESSION_TYPE', 'wayland');
+    await expect(desktop.capture(new AbortController().signal)).rejects.toThrow('X11');
+    vi.stubEnv('XDG_SESSION_TYPE', 'x11');
+    vi.mocked(screen.getAllDisplays).mockReturnValue([{}, {}] as never);
+    await expect(desktop.execute({ type: 'wait' }, {} as never, new AbortController().signal)).rejects.toThrow('exactly one display');
+    expect(desktopCapturer.getSources).not.toHaveBeenCalled();
+    expect(executeX11Command).not.toHaveBeenCalled();
+  });
+
+  it('does not substitute an unrelated captured display', async () => {
+    vi.useFakeTimers();
+    vi.mocked(desktopCapturer.getSources).mockResolvedValue([{ display_id: 'other-display' }] as never);
+    const desktop = new UbuntuDesktop(surface(true) as unknown as BrowserWindow);
+    const pending = expect(desktop.capture(new AbortController().signal)).rejects.toThrow('selected display');
+    await vi.advanceTimersByTimeAsync(250);
+    await pending;
+  });
+
+  it('does not synthesize geometry when the input backend is unavailable', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getRootGeometry).mockRejectedValueOnce(new Error('X11 unavailable'));
+    const desktop = new UbuntuDesktop(surface(true) as unknown as BrowserWindow);
+    const pending = expect(desktop.capture(new AbortController().signal)).rejects.toThrow('X11 unavailable');
+    await vi.advanceTimersByTimeAsync(250);
+    await pending;
+    expect(desktopCapturer.getSources).not.toHaveBeenCalled();
   });
 });

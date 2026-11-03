@@ -4,7 +4,11 @@ import type { DesktopCommand, DesktopWindow, ScreenObservation } from '../../sha
 export function runXdotool(args: string[], signal: AbortSignal, input?: string): Promise<string> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const child = spawn('/usr/bin/xdotool', args, { shell: false, signal, timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'] });
+    const displayEnv = process.env.DISPLAY || ':0';
+    const child = spawn('/usr/bin/xdotool', args, {
+      shell: false, signal, timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'],
+      env: { ...process.env, DISPLAY: displayEnv },
+    });
     let output = '';
     let settled = false;
     // Name the failing subcommand (never raw output) so a mid-run failure traces to one step.
@@ -58,8 +62,8 @@ export async function getRootGeometry(signal: AbortSignal): Promise<{ width: num
   const match = /^(\d+)\s+(\d+)$/.exec(result);
   const width = Number(match?.[1]);
   const height = Number(match?.[2]);
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) throw new Error('Could not determine the X11 desktop geometry.');
-  return { width, height };
+  if (Number.isSafeInteger(width) && Number.isSafeInteger(height) && width >= 1 && height >= 1) return { width, height };
+  throw new Error('Could not determine the X11 desktop geometry.');
 }
 
 const keyNames: Record<string, string> = {
@@ -81,8 +85,11 @@ export async function executeX11Command(action: DesktopCommand, frame: ScreenObs
   const keys = action.type === 'keypress' ? action.keys.map(keyName).join('+') : null;
   const geometry = await getRootGeometry(signal);
   if (geometry.width !== frame.desktopWidth || geometry.height !== frame.desktopHeight) throw new Error('Desktop geometry changed. Start from a fresh observation.');
-  if (!/^[0-9]+$/.test(frame.activeWindowId)) throw new Error('Invalid foreground window.');
-  await runXdotool(['windowactivate', '--sync', frame.activeWindowId], signal);
+  if (action.type === 'type' || action.type === 'keypress') {
+    if (!/^[1-9][0-9]*$/.test(frame.activeWindowId)) throw new Error('No verified foreground window is available.');
+    const active = await runXdotool(['getactivewindow'], signal);
+    if (active !== frame.activeWindowId) throw new Error('Desktop focus changed. Start from a fresh observation.');
+  }
   const point = 'x' in action
     ? [String(Math.min(geometry.width - 1, Math.round(action.x * geometry.width / frame.width))),
       String(Math.min(geometry.height - 1, Math.round(action.y * geometry.height / frame.height)))]

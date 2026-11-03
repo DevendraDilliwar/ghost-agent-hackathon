@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { FileOperations, writeAtomic } from './file-operations';
+import { readdir, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDomainId } from '../shared/contracts/mission';
 import type { MissionPlan, PhaseRecord, PhaseStatus } from '../shared/contracts/mission';
@@ -14,15 +15,22 @@ import type {
  * (no screenshots, no typed text, no coordinates, no evidence images).
  */
 export class RunHistoryStore {
+  private readonly operations = new FileOperations();
+  get healthy(): boolean { return this.operations.healthy; }
+  drain(): Promise<void> { return this.operations.drain(); }
+
   constructor(private readonly baseDir: string) {}
 
   async saveRun(record: Omit<RunRecord, 'createdAt' | 'updatedAt'>): Promise<void> {
     try {
       if (!idPattern.test(record.runId)) return;
-      const now = Date.now();
-      const previous = await this.loadRun(record.runId);
-      await this.writeJson(this.baseDir, record.runId + '.json', {
-        ...record, createdAt: previous?.createdAt ?? now, updatedAt: now,
+      const target = join(this.baseDir, record.runId + '.json');
+      await this.operations.enqueue(target, async () => {
+        const previous = await this.loadRun(record.runId);
+        const now = Date.now();
+        await writeAtomic(target, JSON.stringify({
+          ...record, createdAt: previous?.createdAt ?? now, updatedAt: now,
+        }));
       });
     } catch {
       // History is best-effort; the live run continues without it.
@@ -43,7 +51,12 @@ export class RunHistoryStore {
   async deleteRun(runId: string): Promise<void> {
     try {
       if (!idPattern.test(runId)) return;
-      await unlink(join(this.baseDir, runId + '.json')).catch(() => undefined);
+      const target = join(this.baseDir, runId + '.json');
+      await this.operations.enqueue(target, async () => {
+        try { await unlink(target); } catch (error) {
+          if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
+        }
+      });
     } catch {
       // Deletion never breaks the app; the list simply keeps the entry.
     }
@@ -65,20 +78,13 @@ export class RunHistoryStore {
           missionId: record.missionId, resumable: record.resumable,
           attachmentNames: record.attachmentNames ?? [],
         });
-        if (summaries.length >= 200) break;
+        summaries.sort((a, b) => b.updatedAt - a.updatedAt || a.runId.localeCompare(b.runId));
+        if (summaries.length > 50) summaries.pop();
       }
       return summaries.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
     } catch {
       return [];
     }
-  }
-
-  private async writeJson(directory: string, file: string, value: unknown): Promise<void> {
-    await mkdir(directory, { recursive: true });
-    const target = join(directory, file);
-    const tmp = target + '.tmp';
-    await writeFile(tmp, JSON.stringify(value), { mode: 0o600 });
-    await rename(tmp, target);
   }
 
   private async readBounded(file: string): Promise<string> {
@@ -92,7 +98,7 @@ const idPattern = /^[A-Za-z0-9-]{1,80}$/;
 const statuses: AgentStatus[] = ['idle', 'preparing', 'observing', 'thinking', 'validating',
   'awaiting_approval', 'acting', 'verifying', 'completed', 'paused', 'needs_user', 'stopped', 'failed'];
 const senders = ['user', 'agent', 'system'];
-const actionTypes: ActionType[] = ['click', 'double_click', 'type', 'key_press', 'scroll', 'wait', 'verify'];
+const actionTypes: ActionType[] = ['click', 'double_click', 'type', 'key_press', 'scroll', 'wait', 'verify', 'shell'];
 const actionStatuses: AgentAction['status'][] = ['pending', 'awaiting_approval', 'executed', 'rejected', 'failed'];
 const riskLevels: NonNullable<AgentAction['riskLevel']>[] = ['safe', 'medium', 'high'];
 const verificationStatuses: ActionVerification['status'][] = ['verified_success', 'stalled_no_change', 'error_dialog_detected', 'human_intervention_needed'];
@@ -206,6 +212,7 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
   if (data.runId !== runId) return null;
+  if (data.attemptedActions !== undefined && (typeof data.attemptedActions !== 'number' || !Number.isSafeInteger(data.attemptedActions) || data.attemptedActions < 0 || data.attemptedActions > 2000)) return null;
   const goal = text(data.goal, 2000);
   const message = text(data.message, 2000);
   if (goal === null || message === null) return null;
@@ -214,7 +221,7 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
     if (typeof data[key] !== 'number' || !Number.isSafeInteger(data[key]) || (data[key] as number) < 0) return null;
   }
   for (const key of ['maxSteps', 'maxMinutes'] as const) {
-    if (typeof data[key] !== 'number' || !Number.isSafeInteger(data[key]) || (data[key] as number) < 1 || (data[key] as number) > 1000) return null;
+    if (typeof data[key] !== 'number' || !Number.isSafeInteger(data[key]) || (data[key] as number) < 1 || (data[key] as number) > (key === 'maxSteps' ? 2000 : 480)) return null;
   }
   if (data.missionId !== null && (typeof data.missionId !== 'string' || !idPattern.test(data.missionId))) return null;
   if (typeof data.resumable !== 'boolean') return null;
@@ -237,6 +244,7 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
   const mission = validMission(data.mission);
   if (mission === undefined) return null;
   return {
+    ...(data.attemptedActions === undefined ? {} : { attemptedActions: data.attemptedActions as number }),
     runId, goal, status: data.status as AgentStatus, message, messages, actions, mission,
     missionId: data.missionId as string | null, resumable: data.resumable, attachmentNames,
     maxSteps: data.maxSteps as number, maxMinutes: data.maxMinutes as number,
@@ -246,11 +254,12 @@ function validRecord(value: unknown, runId: string): RunRecord | null {
 }
 
 /** Convert a live snapshot into a redacted, bounded history record. Returns null when the run id is unsafe. */
-export function toRunRecord(snapshot: TaskSnapshot, attachmentNames: string[] = []): Omit<RunRecord, 'createdAt' | 'updatedAt'> | null {
+export function toRunRecord(snapshot: TaskSnapshot, attachmentNames: string[] = [], retainTaskContent = false): Omit<RunRecord, 'createdAt' | 'updatedAt'> | null {
   if (!snapshot.runId || !idPattern.test(snapshot.runId)) return null;
-  const mission = snapshot.mission;
+  const mission = retainTaskContent ? snapshot.mission : null;
   return {
     runId: snapshot.runId,
+    attemptedActions: snapshot.attemptedActions ?? 0,
     goal: snapshot.goal.slice(0, 2000),
     status: snapshot.status,
     missionId: mission?.missionId ?? null,
@@ -258,20 +267,22 @@ export function toRunRecord(snapshot: TaskSnapshot, attachmentNames: string[] = 
     attachmentNames: attachmentNames.slice(0, 3).map(name => name.slice(0, 128)),
     maxSteps: snapshot.maxSteps,
     maxMinutes: snapshot.maxMinutes,
-    message: snapshot.message.slice(0, 2000),
-    messages: snapshot.messages.slice(-200).map(item => ({
+    message: 'Run status: ' + snapshot.status,
+    messages: snapshot.messages.filter(item => retainTaskContent || item.sender === 'user').slice(-200).map(item => ({
       id: item.id.slice(0, 80), sender: item.sender, content: item.content.slice(0, 4000), timestamp: item.timestamp.slice(0, 64),
     })),
     actions: snapshot.actions.slice(-120).map(item => ({
-      id: item.id.slice(0, 80), type: item.type, description: item.description.slice(0, 2000),
+      id: item.id.slice(0, 80), type: item.type, description: item.type === 'shell' ? 'Terminal command' : item.description.slice(0, 2000),
       timestamp: item.timestamp.slice(0, 64), status: item.status,
-      ...(item.target === undefined ? {} : { target: item.target.slice(0, 500) }),
+      ...(!retainTaskContent || item.target === undefined ? {} : { target: item.target.slice(0, 500) }),
       ...(item.riskLevel === undefined ? {} : { riskLevel: item.riskLevel }),
       ...(item.verification === undefined ? {} : {
         verification: {
-          ...item.verification,
-          summary: item.verification.summary.slice(0, 2000),
-          ...(item.verification.recoverySuggestion === undefined ? {}
+          status: item.verification.status,
+          visualDeltaPercent: item.verification.visualDeltaPercent,
+          verifiedAt: item.verification.verifiedAt,
+          summary: retainTaskContent && item.type !== 'shell' ? item.verification.summary.slice(0, 2000) : item.type + ': ' + item.verification.status,
+          ...(!retainTaskContent || item.type === 'shell' || item.verification.recoverySuggestion === undefined ? {}
             : { recoverySuggestion: item.verification.recoverySuggestion.slice(0, 2000) }),
         },
       }),

@@ -4,7 +4,9 @@
  * The agent runs on the user's own machine, so the shell is powerful by
  * design — but privilege escalation, disk destruction, power control, and
  * piped remote-code execution are never legitimate agent work. This validator
- * rejects those shapes before anything spawns. Pure string checks, no I/O.
+ * rejects some obvious shapes before anything spawns. This denylist is not a
+ * sandbox or a complete parser. Shell access requires explicit host capability
+ * enablement, per-command approval, and an isolated disposable OS session. Pure string checks, no I/O.
  */
 
 /** Binaries that are never valid as the leading command of a segment. */

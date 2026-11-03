@@ -18,6 +18,7 @@ export interface RunSummary {
 }
 
 export interface RunRecord extends RunSummary {
+  readonly attemptedActions?: number;
   readonly maxSteps: number;
   readonly maxMinutes: number;
   readonly message: string;

@@ -17,14 +17,19 @@ export function malformed(message: string): Error {
   return Object.assign(new Error(message), { malformedModelOutput: true });
 }
 
-function parseSafetyChecks(call: Record<string, unknown>, warnings: string[]): void {
-  if (call.pending_safety_checks === undefined) return;
+function parseSafetyChecks(call: Record<string, unknown>): NonNullable<ModelDecision['pendingSafetyChecks']> {
+  if (call.pending_safety_checks === undefined) return [];
   if (!Array.isArray(call.pending_safety_checks) || call.pending_safety_checks.length > 10) throw malformed('Invalid provider safety checks.');
-  for (const check of call.pending_safety_checks) {
+  return call.pending_safety_checks.map(check => {
     const item = object(check);
-    if (typeof item.message !== 'string') throw malformed('Invalid provider safety check.');
-    warnings.push(item.message.slice(0, 1000));
-  }
+    if (Object.keys(item).some(key => !['id', 'code', 'message'].includes(key)) ||
+        typeof item.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(item.id) ||
+        !['malicious_instructions', 'irrelevant_domain', 'sensitive_domain'].includes(String(item.code)) ||
+        typeof item.message !== 'string' || !item.message.trim() || item.message.length > 1000) {
+      throw malformed('Invalid or unsupported provider safety check.');
+    }
+    return { id: item.id, code: String(item.code), message: item.message };
+  });
 }
 
 export function parseMetaDecision(value: unknown, observation?: ScreenObservation): ModelDecision {
@@ -53,6 +58,7 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
   const functions = output.filter(item => item.type === 'function_call');
   if (calls.length + functions.length > 1) throw malformed('Multiple tool calls in one decision are not supported.');
   const warnings: string[] = [];
+  let pendingSafetyChecks: NonNullable<ModelDecision['pendingSafetyChecks']> = [];
   const message = output.filter(item => item.type === 'message').flatMap(item => Array.isArray(item.content) ? item.content : [])
     .map(object).filter(item => item.type === 'output_text' && typeof item.text === 'string')
     .map(item => String(item.text).slice(0, 6000)).join('\n').slice(0, 6000);
@@ -63,7 +69,7 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
       if (typeof handoff.arguments !== 'string' || handoff.arguments.length > 4096) throw malformed('Meta returned an unsupported shell call.');
       let shellArgs: unknown;
       try { shellArgs = JSON.parse(handoff.arguments) as unknown; }
-      catch { throw malformed('Meta returned an invalid shell call (arguments are not JSON: ' + handoff.arguments.slice(0, 120) + ').'); }
+      catch { throw malformed('Meta returned an invalid shell call (arguments are not JSON).'); }
       const shellCommand = object(shellArgs).command;
       if (typeof shellCommand !== 'string') throw malformed('Meta returned an invalid shell call (command is not a string).');
       if (!shellCommand.trim()) throw malformed('Meta returned an invalid shell call (empty command).');
@@ -98,8 +104,8 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
     if (!observation) {
       // Text-mode decision (after a shell step): hold the actions unvalidated so the
       // controller captures a fresh screenshot and validates them instead of dying.
-      parseSafetyChecks(call, warnings);
-      return { action: null, pendingActions: [...call.actions], message, warnings,
+      pendingSafetyChecks = parseSafetyChecks(call);
+      return { action: null, pendingActions: [...call.actions], message, warnings, pendingSafetyChecks,
         inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
     }
     let batch;
@@ -111,10 +117,10 @@ export function parseMetaDecision(value: unknown, observation?: ScreenObservatio
     action = batch[0]!;
     actions = batch;
     if (call.actions.length > 5) warnings.push('Only the first 5 actions will execute. The agent will observe again before deciding another batch.');
-    parseSafetyChecks(call, warnings);
+    pendingSafetyChecks = parseSafetyChecks(call);
   } else if (!message) {
     throw malformed('Meta returned neither an action nor a result.');
   }
-  return { action, message, warnings, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
+  return { action, message, warnings, pendingSafetyChecks, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens),
     ...(actions === undefined ? {} : { actions }) };
 }

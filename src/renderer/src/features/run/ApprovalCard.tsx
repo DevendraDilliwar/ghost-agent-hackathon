@@ -17,6 +17,7 @@ export function ApprovalCard({ runtime }: { runtime: TaskRuntimeView }) {
         </span>
       </div>
       <p className="mt-2 text-sm leading-relaxed text-slate-800">{pending.description}</p>
+      {pending.pendingSafetyChecks?.map(check => <p key={check.id} className="mt-2 text-sm text-amber-900">{check.code}: {check.message}</p>)}
       {pending.coordinates && (
         <p className="mt-1 font-mono text-[11px] text-slate-500">
           at ({pending.coordinates.x}, {pending.coordinates.y}){pending.target ? ` · ${pending.target}` : ''}
@@ -40,7 +41,7 @@ export function ApprovalCard({ runtime }: { runtime: TaskRuntimeView }) {
           size="sm"
           className="font-bold"
         >
-          <span>Approve &amp; Auto-Run Rest</span>
+          <span>Approve this action</span>
         </Button>
       </div>
     </section>

@@ -94,3 +94,11 @@ describe('LocalShell', () => {
     await expect(new LocalShell().run('echo hi', controller.signal)).rejects.toThrow();
   });
 });
+
+describe('shell child environment', () => {
+  it('does not inherit provider credentials or shell startup hooks', async () => {
+    const { shellEnvironment } = await import('./local-shell');
+    const env = shellEnvironment({ META_API_KEY: 'dummy-provider-key', AWS_SECRET_ACCESS_KEY: 'dummy', BASH_ENV: '/tmp/never-source', PATH: '/untrusted', DISPLAY: ':12', HOME: '/tmp/test-home' });
+    expect(env).toEqual({ PATH: '/usr/local/bin:/usr/bin:/bin', DISPLAY: ':12', HOME: '/tmp/test-home' });
+  });
+});
