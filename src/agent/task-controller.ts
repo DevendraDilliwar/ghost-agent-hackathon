@@ -118,6 +118,14 @@ function formatExtracted(fields: ExtractDecision): string {
   return (head + (rows ? '; items: ' + rows : '')).slice(0, 2000);
 }
 
+/**
+ * Provider flags that only ask for confirmation (not safety alarms). In
+ * autonomous modes these are logged and auto-proceeded; true alarms and any
+ * unknown code always force human review. Add codes here only after seeing
+ * them in the wild.
+ */
+const AUTO_PROCEED_CONFIRMATIONS = ['computer_action_requires_confirmation'];
+
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -891,16 +899,20 @@ export class TaskController {
       this.fail('The action limit was reached. No further input will be dispatched.');
       return;
     }
-    const isAuto = (this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me') && !decision.pendingSafetyChecks?.length;
+    const safetyChecks = decision.pendingSafetyChecks ?? [];
+    const alarms = safetyChecks.filter(check => !AUTO_PROCEED_CONFIRMATIONS.includes(check.code));
+    const isAuto = (this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me') && !alarms.length;
     // A click or key can replace the target surface. Re-observe before any
     // further action, including proposals returned in the same model response.
     const effective = planned.slice(0, 1);
     const head = effective[0]!;
     this.record('decide', 'success', 'Decided ' + effective.length + ' action(s): ' + effective.map(item => item.type).join(' → '), { durationMs: this.lastDecideMs });
+    const autoNote = isAuto && safetyChecks.length
+      ? ' · Provider confirmation auto-approved (' + safetyChecks.map(check => check.code).join(', ').slice(0, 120) + ').' : '';
     const views: AgentAction[] = effective.map(item => ({
       id: this.dependencies.id(),
       type: item.type === 'keypress' ? 'key_press' : item.type === 'screenshot' ? 'verify' : item.type,
-      description: this.dependencies.describe(item), timestamp: this.timestamp(),
+      description: this.dependencies.describe(item) + autoNote, timestamp: this.timestamp(),
       status: isAuto ? 'pending' : 'awaiting_approval',
       ...(decision.pendingSafetyChecks?.length ? { pendingSafetyChecks: decision.pendingSafetyChecks } : {}),
       ...('x' in item ? { coordinates: { x: item.x, y: item.y } } : {}),
@@ -911,7 +923,8 @@ export class TaskController {
     if (isAuto) {
       this.pending = null;
       this.update({
-        status: 'acting', pendingActionId: null, message: effective.map(item => this.dependencies.describe(item)).join(' → ').slice(0, 500),
+        status: 'acting', pendingActionId: null, message: effective.map(item => this.dependencies.describe(item)).join(' → ').slice(0, 500)
+          + (safetyChecks.length ? ' · Provider confirmation auto-approved (' + safetyChecks.map(check => check.code).join(', ').slice(0, 120) + ').' : ''),
         actions: [...this.state.actions.filter(item => item.status !== 'pending'), ...views],
       });
       this.launch({ actions: effective, actionIds: views.map(view => view.id), observation: frame });

@@ -1657,6 +1657,36 @@ describe('hardening regressions', () => {
     expect(controller.getSnapshot().actions[0]?.pendingSafetyChecks).toEqual(pendingSafetyChecks);
   });
 
+  it('auto-proceeds provider confirmations in full_access mode and stamps the audit note', async () => {
+    const { controller, model, desktop } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, pendingSafetyChecks: [{ id: 'safety-1', code: 'computer_action_requires_confirmation', message: 'Review and confirm.' }] }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(desktop.execute).toHaveBeenCalled());
+    expect(controller.getSnapshot().pendingActionId).toBeNull();
+    expect(controller.getSnapshot().actions[0]?.pendingSafetyChecks).toEqual([{ id: 'safety-1', code: 'computer_action_requires_confirmation', message: 'Review and confirm.' }]);
+    expect(controller.getSnapshot().actions[0]?.description ?? '').toContain('auto-approved (computer_action_requires_confirmation)');
+  });
+
+  it('still forces review when alarms accompany confirmations', async () => {
+    const { controller, model, desktop } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, pendingSafetyChecks: [
+      { id: 'safety-1', code: 'computer_action_requires_confirmation', message: 'Confirm.' },
+      { id: 'safety-2', code: 'malicious_instructions', message: 'Untrusted.' },
+    ] }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('awaiting_approval'));
+    expect(desktop.execute).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().message).toBe('Provider safety review required before this action.');
+  });
+
+  it('still asks confirmations in ask_approval mode', async () => {
+    const { controller, model, desktop } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, pendingSafetyChecks: [{ id: 'safety-1', code: 'computer_action_requires_confirmation', message: 'Confirm.' }] }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'ask_approval' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('awaiting_approval'));
+    expect(desktop.execute).not.toHaveBeenCalled();
+  });
+
   it('counts a failed dispatch against the one-action ceiling', async () => {
     const { controller, desktop } = setup();
     desktop.execute.mockRejectedValue(new Error('May have partially submitted input'));
