@@ -27,5 +27,7 @@ describe('app profiles', () => {
     expect(APP_PROFILES.find(profile => profile.id === 'calc')?.notes).toContain('Next chunk');
     expect(APP_PROFILES.find(profile => profile.id === 'calc')?.notes).toContain('Ctrl+End');
     expect(APP_PROFILES.find(profile => profile.id === 'tally')?.notes).toContain('keyboard');
+    expect(APP_PROFILES.find(profile => profile.id === 'calc')?.notes).toContain('Ctrl+N');
+    expect(APP_PROFILES.find(profile => profile.id === 'writer')?.notes).toContain('Ctrl+N');
   });
 });

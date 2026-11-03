@@ -29,13 +29,15 @@ const TALLY_NOTES = [
 const CALC_NOTES = [
   'LibreOffice Calc grid: arrows move, Tab goes right, Enter goes down, Home jumps to column A.',
   'Save with Ctrl+S; the filename field may be prefilled — Ctrl+A first, then type. If a save may already have worked, verify with run_shell (ls the folder) instead of saving again.',
-  'Bulk entry: NEVER click cells or the Name Box. Press Ctrl+End, Down, Home to land on the first empty A-cell. Select all chunk rows once with Shift+Down (plus Shift+Right for columns), then type the Next chunk, one chunk per type action, Tab between every cell.',
+  'Bulk entry: NEVER click cells or the Name Box. Ctrl+End, Down, Home lands on the first empty A-cell. Select rows once with Shift+Down (+Shift+Right for columns), then type the Next chunk, one chunk per type action, Tab between every cell.',
+  'Wrong file open? Ctrl+N first, then work.',
 ].join(' ');
 
 const WRITER_NOTES = [
   'LibreOffice Writer document: click the page and type; Enter is a new paragraph.',
   'Save with Ctrl+S; the filename field may be prefilled — Ctrl+A first, then type.',
   'If a save may already have worked, verify with run_shell (ls the folder) instead of saving again.',
+  'Wrong file open? Ctrl+N first, then work.',
 ].join(' ');
 
 export const APP_PROFILES: readonly AppProfile[] = [

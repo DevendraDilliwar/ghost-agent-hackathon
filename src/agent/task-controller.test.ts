@@ -1175,11 +1175,24 @@ describe('task lifecycle', () => {
     expect(history).toContain('a\t1\tb\t2');
   });
 
-  it('skips fill planning for single-line goals without a photo', async () => {
+  it('leaves the queue inactive when the plan comes back empty', async () => {
     const { controller, model } = setup();
     controller.start({ ...configuration, approvalMode: 'full_access' });
     await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
-    expect(model.fillPlan).not.toHaveBeenCalled();
+    expect(model.fillPlan).toHaveBeenCalledTimes(1);
+    expect(model.decide.mock.calls[0]?.[0].history.join('\n')).not.toContain('Fill plan:');
+  });
+
+  it('queues generated dummy rows when the goal asks for bulk entry', async () => {
+    const { controller, model } = setup();
+    model.fillPlan.mockResolvedValue({ units: [{ cells: ['Salt', '10', '28'] }, { cells: ['Oil', '5', '140'] }],
+      chunkRows: 5, startHint: 'first empty row', inputTokens: 1, outputTokens: 1 });
+    controller.start({ ...configuration, approvalMode: 'full_access', goal: 'Add 50 dummy grocery rows to the open sheet' });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.fillPlan).toHaveBeenCalledTimes(1);
+    const history = model.decide.mock.calls[0]?.[0].history.join('\n') ?? '';
+    expect(history).toContain('Fill plan: 2 rows (first empty row), 0 done.');
+    expect(history).toContain('Salt\t10\t28');
   });
 
   it('marks chunk rows done after a verified bulk type', async () => {
@@ -1195,6 +1208,17 @@ describe('task lifecycle', () => {
     const history = model.decide.mock.calls[1]?.[0].history.join('\n') ?? '';
     expect(history).toContain('Fill plan: 4 rows, 2 done.');
     expect(history).toContain('c\t3\td\t4');
+  });
+
+  it('shows the open-window inventory on every decision', async () => {
+    const desktop = { preflight: vi.fn().mockResolvedValue(undefined), capture: vi.fn().mockResolvedValue(frame),
+      execute: vi.fn().mockResolvedValue(undefined),
+      listWindows: vi.fn().mockResolvedValue([{ id: '101', title: 'Report - LibreOffice Writer' }]) };
+    const { controller, model } = setup({ desktop });
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(desktop.listWindows).toHaveBeenCalled();
+    expect(model.decide.mock.calls[0]?.[0].history.join('\n')).toContain('Open windows (1): #101 Report - LibreOffice Writer');
   });
 
   it('moves the checklist pointer from a bracketed step tag', async () => {

@@ -207,8 +207,8 @@ describe('model connection across tasks in one app session', () => {
       expect(runtime.connection.info()).toMatchObject({ configured: true, verified: true, source: 'session' });
     }
     expect(stubs.probe).toHaveBeenCalledTimes(1);
-    // One parseIntent + one plan + one decide + one success check per task, each constructing a model instance.
-    expect(stubs.modelOptions).toHaveBeenCalledTimes(8);
+    // One parseIntent + one plan + one fillPlan + one decide + one success check per task, each constructing a model instance.
+    expect(stubs.modelOptions).toHaveBeenCalledTimes(10);
     expect(stubs.modelOptions.mock.calls.every(([options]) => options.apiKey === 'fake-session-key')).toBe(true);
     expect(JSON.stringify(runtime.connection.info())).not.toContain('fake-session-key');
   });

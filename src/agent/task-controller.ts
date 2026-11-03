@@ -495,13 +495,13 @@ export class TaskController {
 
   /**
    * Builds the fill queue once per run: the model turns prompt/photo data
-   * into ordered row units, then each round types one chunk and marks it.
-   * Single-line goals without a photo skip the call (no entry data to list).
+   * (or a bulk-entry request like "50 dummy rows") into ordered row units,
+   * then each round types one chunk and marks it. Empty units = not an
+   * entry task, and the queue stays silent.
    */
   private async ensureFillPlan(signal: AbortSignal, generation: number): Promise<boolean> {
     if (this.fillPlanned) return true;
     this.fillPlanned = true;
-    if (!this.extracted && (this.state.goal.match(/\n/g) ?? []).length < 2) return true;
     const queue = await this.dependencies.model.fillPlan({
       goal: this.state.goal, summary: this.state.intent?.summary ?? '',
       data: this.extracted ? formatExtracted(this.extracted) : '', signal,
@@ -744,6 +744,8 @@ export class TaskController {
           : 'Asking Meta for the next step from the terminal output.',
       groundedElements: grounding?.elements ?? [],
     });
+    const inventory = await this.windowInventoryNote(signal);
+    if (!this.current(generation, signal)) return;
     const history = [...this.resumedHistory];
     const stepLines = this.state.actions.filter(action => ['executed', 'failed'].includes(action.status))
       .map(action => action.status + ': ' + action.description);
@@ -755,6 +757,7 @@ export class TaskController {
     if (this.lastWindowId) {
       history.push('Focused window: #' + this.lastWindowId + (this.lastWindowTitle ? ' (' + this.lastWindowTitle + ')' : ''));
     }
+    if (inventory) history.push(inventory.trim());
     const appProfile = matchAppProfile(this.lastWindowTitle);
     if (appProfile) history.push('App notes (' + appProfile.id + '): ' + appProfile.notes);
     if (this.extracted) history.push('Source bill fields: ' + formatExtracted(this.extracted));
@@ -1566,7 +1569,7 @@ export class TaskController {
     }
   }
 
-  /** Best-effort open-window list so a retry can focus the right window first. */
+  /** Best-effort open-window list, refreshed for every decision so the model sees what is actually open. */
   private async windowInventoryNote(signal: AbortSignal): Promise<string> {
     const list = this.dependencies.desktop.listWindows;
     if (!list) return '';

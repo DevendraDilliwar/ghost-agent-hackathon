@@ -26,6 +26,15 @@ describe('Meta computer-use adapter', () => {
     expect(decision.action).toEqual({ type: 'click', x: 50, y: 60, button: 'left' });
   });
 
+  it('instructs state-first decisions with the screen as truth over the plan', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(response)));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    await model.decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal });
+    const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
+    expect(body.instructions).toContain('State check first');
+    expect(body.instructions).toContain('screen is truth');
+  });
+
   it('does not echo provider error bodies or credentials into user-visible errors', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response('secret-provider-debug-data', { status: 401 }));
     const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
@@ -331,6 +340,17 @@ describe('Meta computer-use adapter', () => {
     expect(body).toContain('Lamp 12 450');
     expect(result.units).toEqual([{ cells: ['Lamp', '12', '450'] }]);
     expect(result).toMatchObject({ chunkRows: 5, startHint: 'first empty row', inputTokens: 60, outputTokens: 25 });
+  });
+
+  it('allows invented rows when the goal asks for dummy data', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 60, output_tokens: 25 },
+      output: [{ type: 'message', content: [{ type: 'output_text',
+        text: '{"units":[{"cells":["Salt","10","28"]}],"chunkRows":5,"startHint":""}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    await model.fillPlan({ goal: 'Add 50 dummy rows', summary: 'Bulk entry', data: '', signal: new AbortController().signal });
+    expect(String(request.mock.calls[0]![1]?.body)).toContain('dummy or sample rows');
   });
 
   it('plans ordered domain phases without tools or screenshots', async () => {
