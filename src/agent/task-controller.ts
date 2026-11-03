@@ -947,15 +947,22 @@ export class TaskController {
       this.fail('The action limit was reached. No further input will be dispatched.');
       return;
     }
+    const isAuto = this.approvalMode === 'full_access' || this.approvalMode === 'approve_for_me';
     this.record('decide', 'success', 'Decided 1 terminal command.', { durationMs: this.lastDecideMs });
-    const id = this.dependencies.id();
-    this.pendingShell = command;
-    this.update({
-      status: 'awaiting_approval', pendingActionId: id,
-      message: warnings.length ? warnings.join(' · ') : 'Review this terminal command before it runs.',
-      actions: [...this.state.actions.filter(item => item.status !== 'pending'),
-        { id, type: 'shell', description: '$ ' + command, timestamp: this.timestamp(), status: 'awaiting_approval' }],
-    });
+    if (!isAuto) {
+      const id = this.dependencies.id();
+      this.pendingShell = command;
+      this.update({
+        status: 'awaiting_approval', pendingActionId: id,
+        message: warnings.length ? warnings.join(' · ') : 'Review this terminal command before it runs.',
+        actions: [...this.state.actions.filter(item => item.status !== 'pending'),
+          { id, type: 'shell', description: '$ ' + command, timestamp: this.timestamp(), status: 'awaiting_approval' }],
+      });
+      return;
+    }
+    await this.runShellStep(signal, generation, command, null);
+    if (!this.current(generation, signal)) return;
+    await this.decideNext(signal, generation, null, null);
   }
 
   private launchShell(command: string, actionId: string): void {

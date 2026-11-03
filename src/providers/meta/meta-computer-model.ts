@@ -94,7 +94,7 @@ const fillPlanInstructions = [
   'Schema: {"units": [{"cells": ["Lamp", "12", "450"]}], "chunkRows": 5, "startHint": "first empty row below existing data"}.',
   'One unit per row, cells left-to-right as plain strings. Preserve every value verbatim from the goal or data - never invent, reorder, or drop rows. At most 200 units, 10 cells each, 200 chars per cell.',
   'Exception: when the goal asks for a number of dummy or sample rows without giving values, invent that many plausible rows in the requested columns.',
-  'chunkRows (1-10) is how many rows to type per round; prefer 5. startHint (under 200 chars) says where typing should begin.',
+  'chunkRows (1-10) is how many rows to type per round; prefer 3 so each chunk reads back exactly. startHint (under 200 chars) says where typing should begin.',
   'When the goal is not a row-by-row entry task, return {"units": []} with chunkRows 5 and an empty startHint.',
   'Prose, letters, notes, and paragraphs are never row tasks, even when multi-line - return {"units": []} for those; rows means grid or table cells only.',
 ].join(' ');

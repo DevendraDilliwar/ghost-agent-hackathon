@@ -59,7 +59,7 @@ describe('eval tasks', () => {
   it('passes doc tasks with stubbed office content', () => {
     const root = freshRoot();
     const deps = {
-      readOdtEntry: (file: string, entry: string) => entry === 'content.xml' ? (file.endsWith('.ods') ? calcXml : file.endsWith('disk-report.odt') ? office('<text:p>The filesystem size is 20G.</text:p>') : writerXml)
+      readOdtEntry: (file: string, entry: string) => entry === 'content.xml' ? (file.endsWith('.ods') ? calcXml : file.endsWith('disk-report.odt') ? office('<text:p>The filesystem size is 20G</text:p>') : writerXml)
         : file.endsWith('.ods') ? 'application/vnd.oasis.opendocument.spreadsheet' : 'application/vnd.oasis.opendocument.text',
     };
     for (const task of [EVAL_TASKS[1]!, EVAL_TASKS[3]!, EVAL_TASKS[4]!]) task.setup(root);

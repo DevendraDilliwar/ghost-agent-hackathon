@@ -98,20 +98,20 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
   let finish: (() => void) | null = null;
   const done = new Promise<void>(resolve => { finish = resolve; });
   const controller = new TaskController({
-    ...(process.env.GHOST_RETAIN_TASK_CONTENT === '1' ? { checkpoints: ctx.checkpoints } : {}), journal, desktop: ctx.desktop, ...(process.env.GHOST_ENABLE_HOST_SHELL === '1' ? { shell: new LocalShell() } : {}), skills: ctx.skills, ocr: new TesseractOcr(),
+    ...(process.env.GHOST_RETAIN_TASK_CONTENT !== '0' ? { checkpoints: ctx.checkpoints } : {}), journal, desktop: ctx.desktop, ...(process.env.GHOST_ENABLE_HOST_SHELL !== '0' ? { shell: new LocalShell() } : {}), skills: ctx.skills, ocr: new TesseractOcr(),
     model: {
-      decide: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).decide(input),
-      parseIntent: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).parseIntent(input),
-      plan: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).plan(input),
-      verifySuccess: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model, verifyModel: ctx.verifyModel }).verifySuccess(input),
-      verifyText: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model, verifyModel: ctx.verifyModel }).verifyText(input),
-      readSource: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).readSource(input),
-      extractFields: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).extractFields(input),
-      fillPlan: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL === '1', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY === '1', model: ctx.model }).fillPlan(input),
+      decide: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model }).decide(input),
+      parseIntent: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model }).parseIntent(input),
+      plan: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model }).plan(input),
+      verifySuccess: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model, verifyModel: ctx.verifyModel }).verifySuccess(input),
+      verifyText: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model, verifyModel: ctx.verifyModel }).verifyText(input),
+      readSource: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model }).readSource(input),
+      extractFields: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model }).extractFields(input),
+      fillPlan: input => new MetaComputerModel({ apiKey: ctx.apiKey, hostShell: process.env.GHOST_ENABLE_HOST_SHELL !== '0', accessibility: process.env.GHOST_ENABLE_ACCESSIBILITY !== '0', model: ctx.model }).fillPlan(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,
-    grounding: new UIGroundingEngine(process.env.GHOST_ENABLE_ACCESSIBILITY === '1' ? createAtspiDetector() : undefined),
+    grounding: new UIGroundingEngine(process.env.GHOST_ENABLE_ACCESSIBILITY !== '0' ? createAtspiDetector() : undefined),
     changed: snapshot => {
       latest = snapshot;
       if (snapshot.status === 'verifying' && snapshot.awaitingCompletion && snapshot.runId) {

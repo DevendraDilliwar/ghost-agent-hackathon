@@ -997,11 +997,7 @@ describe('task lifecycle', () => {
 
   it('hands to the user after repeating the identical batch three times', async () => {
     const { controller, model } = setup();
-    model.decide.mockResolvedValue({ ...proposed, actions: [
-      { type: 'keypress', keys: ['ctrl', 's'] },
-      { type: 'type', text: 'sales.ods' },
-      { type: 'keypress', keys: ['Enter'] },
-    ] });
+    model.decide.mockResolvedValue({ ...proposed, actions: [{ type: 'type', text: 'sales.ods' }] });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
     await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
     expect(model.decide).toHaveBeenCalledTimes(3);
@@ -1275,7 +1271,7 @@ describe('task lifecycle', () => {
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
     model.verifyText
       .mockResolvedValueOnce({ confirmed: false, detail: 'Not visible.', inputTokens: 5, outputTokens: 2 })
-      .mockResolvedValueOnce({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValueOnce({ confirmed: true, observedText: '25000', destinationConfirmed: true, verifiedRows: 0, detail: 'Visible.', inputTokens: 5, outputTokens: 2 })
       .mockResolvedValueOnce({ confirmed: false, detail: 'Not visible.', inputTokens: 5, outputTokens: 2 })
       .mockResolvedValueOnce({ confirmed: false, detail: 'Still not visible.', inputTokens: 5, outputTokens: 2 });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 6 });
@@ -1650,6 +1646,17 @@ describe('hardening regressions', () => {
     expect(desktop.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('forces review for unknown provider safety codes in full_access mode', async () => {
+    const { controller, model, desktop } = setup();
+    const pendingSafetyChecks = [{ id: 'safety-1', code: 'future_code', message: 'Careful.' }];
+    model.decide.mockResolvedValueOnce({ ...proposed, pendingSafetyChecks }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('awaiting_approval'));
+    expect(desktop.execute).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().message).toBe('Provider safety review required before this action.');
+    expect(controller.getSnapshot().actions[0]?.pendingSafetyChecks).toEqual(pendingSafetyChecks);
+  });
+
   it('counts a failed dispatch against the one-action ceiling', async () => {
     const { controller, desktop } = setup();
     desktop.execute.mockRejectedValue(new Error('May have partially submitted input'));
@@ -1659,11 +1666,21 @@ describe('hardening regressions', () => {
     expect(controller.getSnapshot().attemptedActions).toBe(1);
   });
 
-  it('requires fresh approval for every shell command in autonomous mode', async () => {
+  it.each(['full_access', 'approve_for_me'] as const)('runs shell commands without review in %s mode', async approvalMode => {
     const run = vi.fn().mockResolvedValue({ exitCode: 0, stdout: 'ok', stderr: '', timedOut: false, truncated: false, durationMs: 1 });
     const { controller, model } = setup({ shell: { run } });
     model.decide.mockResolvedValue({ action: null, shell: { command: 'printf reviewed' }, message: '', warnings: [], inputTokens: 1, outputTokens: 1 });
-    const task = controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 1 });
+    controller.start({ ...configuration, approvalMode, maxSteps: 1 });
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(controller.getSnapshot().status).not.toBe('awaiting_approval');
+    expect(controller.getSnapshot().attemptedActions).toBe(1);
+  });
+
+  it('requires review for shell commands in ask_approval mode', async () => {
+    const run = vi.fn().mockResolvedValue({ exitCode: 0, stdout: 'ok', stderr: '', timedOut: false, truncated: false, durationMs: 1 });
+    const { controller, model } = setup({ shell: { run } });
+    model.decide.mockResolvedValue({ action: null, shell: { command: 'printf reviewed' }, message: '', warnings: [], inputTokens: 1, outputTokens: 1 });
+    const task = controller.start({ ...configuration, approvalMode: 'ask_approval', maxSteps: 1 });
     await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('awaiting_approval'));
     expect(run).not.toHaveBeenCalled();
     controller.review(task.runId!, controller.getSnapshot().pendingActionId!, true);

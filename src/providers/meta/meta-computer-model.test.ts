@@ -454,12 +454,28 @@ describe('capability and safety boundaries', () => {
     await expect(new MetaComputerModel({ apiKey: 'dummy', model: 'muse-spark-1.3' }, request).decide({ goal: 'test', observation: frame, history: [], signal: new AbortController().signal })).rejects.toThrow('Host shell access is disabled');
   });
 
-  it.each([
-    { message: 'missing identity/code' },
-    { id: 'check', code: 'unknown_check', message: 'unknown' },
-    { id: 'check', code: 'sensitive_domain', message: '' },
-    { id: 'check', code: 'sensitive_domain', message: 'review', extra: true },
-  ])('rejects unsupported safety metadata %#', check => {
-    expect(() => parseMetaDecision({ ...response, output: [{ ...response.output[0], pending_safety_checks: [check] }] }, frame)).toThrow('safety check');
+  it('passes unknown safety codes to human review instead of failing the run', () => {
+    const decision = parseMetaDecision({ ...response, output: [{ ...response.output[0],
+      pending_safety_checks: [{ id: 'check', code: 'future_code', message: 'Careful.' }] }] }, frame);
+    expect(decision.pendingSafetyChecks).toEqual([{ id: 'check', code: 'future_code', message: 'Careful.' }]);
+  });
+
+  it('normalizes ragged safety flags into reviewable items', () => {
+    const decision = parseMetaDecision({ ...response, output: [{ ...response.output[0],
+      pending_safety_checks: [
+        { message: '' },
+        { id: 'check', code: 'sensitive_domain', message: 'review', extra: true },
+        { id: 'bad id!', code: '', message: 'x'.repeat(2000) },
+      ] }] }, frame);
+    expect(decision.pendingSafetyChecks).toEqual([
+      { id: 'safety-1', code: 'unspecified_provider_check', message: 'Provider flagged this action for review.' },
+      { id: 'check', code: 'sensitive_domain', message: 'review' },
+      { id: 'safety-3', code: 'unspecified_provider_check', message: 'x'.repeat(1000) },
+    ]);
+  });
+
+  it('still rejects structurally invalid safety lists', () => {
+    expect(() => parseMetaDecision({ ...response, output: [{ ...response.output[0], pending_safety_checks: 'nope' }] }, frame)).toThrow('Invalid provider safety checks');
+    expect(() => parseMetaDecision({ ...response, output: [{ ...response.output[0], pending_safety_checks: [null] }] }, frame)).toThrow('Invalid provider safety check');
   });
 });

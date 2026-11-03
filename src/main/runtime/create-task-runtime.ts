@@ -90,9 +90,9 @@ function memoryDirectory(): string {
 export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow) {
   let disposed = false;
   let disposal: Promise<void> | null = null;
-  const hostShell = process.env.GHOST_ENABLE_HOST_SHELL === '1';
-  const accessibility = process.env.GHOST_ENABLE_ACCESSIBILITY === '1';
-  const retainTaskContent = process.env.GHOST_RETAIN_TASK_CONTENT === '1';
+  const hostShell = process.env.GHOST_ENABLE_HOST_SHELL !== '0';
+  const accessibility = process.env.GHOST_ENABLE_ACCESSIBILITY !== '0';
+  const retainTaskContent = process.env.GHOST_RETAIN_TASK_CONTENT !== '0';
   const apiKey = process.env.META_API_KEY?.trim() ?? '';
   const model = process.env.GHOST_META_MODEL === 'muse-wonder-1.0' ? 'muse-wonder-1.0' : 'muse-spark-1.3';
   // Verification rides on Wonder by default; planning and decisions stay on Spark.

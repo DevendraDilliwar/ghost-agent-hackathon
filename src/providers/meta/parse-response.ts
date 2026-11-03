@@ -17,18 +17,24 @@ export function malformed(message: string): Error {
   return Object.assign(new Error(message), { malformedModelOutput: true });
 }
 
+/**
+ * Fail-REVIEW, never fail-dead: every provider flag reaches a human for
+ * explicit approval (the controller forces review whenever checks exist, in
+ * all modes). Unknown codes and shapes are normalized, never dropped and
+ * never auto-approved, so a new provider flag can pause a run but not kill
+ * it with an unactionable error.
+ */
 function parseSafetyChecks(call: Record<string, unknown>): NonNullable<ModelDecision['pendingSafetyChecks']> {
   if (call.pending_safety_checks === undefined) return [];
-  if (!Array.isArray(call.pending_safety_checks) || call.pending_safety_checks.length > 10) throw malformed('Invalid provider safety checks.');
-  return call.pending_safety_checks.map(check => {
-    const item = object(check);
-    if (Object.keys(item).some(key => !['id', 'code', 'message'].includes(key)) ||
-        typeof item.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(item.id) ||
-        !['malicious_instructions', 'irrelevant_domain', 'sensitive_domain'].includes(String(item.code)) ||
-        typeof item.message !== 'string' || !item.message.trim() || item.message.length > 1000) {
-      throw malformed('Invalid or unsupported provider safety check.');
-    }
-    return { id: item.id, code: String(item.code), message: item.message };
+  if (!Array.isArray(call.pending_safety_checks)) throw malformed('Invalid provider safety checks.');
+  return call.pending_safety_checks.slice(0, 10).map((check, index) => {
+    if (!check || typeof check !== 'object' || Array.isArray(check)) throw malformed('Invalid provider safety check.');
+    const item = check as Record<string, unknown>;
+    const id = typeof item.id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(item.id) ? item.id : 'safety-' + (index + 1);
+    const rawCode = typeof item.code === 'string' ? item.code.slice(0, 128) : '';
+    const code = rawCode || 'unspecified_provider_check';
+    const message = typeof item.message === 'string' && item.message.trim() ? item.message.slice(0, 1000) : 'Provider flagged this action for review.';
+    return { id, code, message };
   });
 }
 
