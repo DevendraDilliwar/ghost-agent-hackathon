@@ -54,8 +54,8 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
   return {
     goal: input.goal.trim(),
     approvalMode: (mode === 'ask_approval' ? 'ask_approval' : 'full_access') as RunConfiguration['approvalMode'],
-    maxSteps: integer(input.maxSteps, 1, 100),
-    maxMinutes: integer(input.maxMinutes, 1, 60),
+    maxSteps: integer(input.maxSteps, 1, 2000),
+    maxMinutes: integer(input.maxMinutes, 1, 480),
     screenConsent: true,
     isolatedEnvironment: true,
     ...(resume ? { resume } : {}),

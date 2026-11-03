@@ -11,15 +11,15 @@ describe('task boundary validation', () => {
   });
   it.each([
     { ...valid, goal: '' }, { ...valid, goal: 'x'.repeat(2001) }, { ...valid, maxSteps: 0 },
-    { ...valid, maxSteps: 101 }, { ...valid, maxSteps: 2.5 }, { ...valid, maxMinutes: 0 },
-    { ...valid, maxMinutes: 61 }, { ...valid, screenConsent: false },
+    { ...valid, maxSteps: 2001 }, { ...valid, maxSteps: 2.5 }, { ...valid, maxMinutes: 0 },
+    { ...valid, maxMinutes: 481 }, { ...valid, screenConsent: false },
     { ...valid, isolatedEnvironment: false }, { ...valid, approvalMode: 'invalid_mode' }, null,
   ])('rejects an invalid or unconsented run', value => {
     expect(() => validateRunConfiguration(value)).toThrow();
   });
   it('accepts extended mission budgets', () => {
-    const configuration = validateRunConfiguration({ ...valid, maxSteps: 100, maxMinutes: 30 });
-    expect(configuration).toMatchObject({ maxSteps: 100, maxMinutes: 30 });
+    const configuration = validateRunConfiguration({ ...valid, maxSteps: 2000, maxMinutes: 480 });
+    expect(configuration).toMatchObject({ maxSteps: 2000, maxMinutes: 480 });
   });
   it.each([
     { type: 'click', x: -1, y: 0 }, { type: 'click', x: 800, y: 0 },

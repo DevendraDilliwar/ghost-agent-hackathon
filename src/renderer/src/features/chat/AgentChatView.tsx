@@ -29,8 +29,8 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('full_access');
   const [screenConsent, setScreenConsent] = useState(true);
   const [isolatedEnvironment, setIsolatedEnvironment] = useState(true);
-  const [maxSteps, setMaxSteps] = useState(25);
-  const [maxMinutes, setMaxMinutes] = useState(5);
+  const [maxSteps, setMaxSteps] = useState(1000);
+  const [maxMinutes, setMaxMinutes] = useState(480);
   const [textSize, setTextSize] = useState(loadTextSize);
   const [themeMode, setThemeMode] = useState(loadThemeMode);
   const [desktopNotifications, setDesktopNotifications] = useState(loadDesktopNotifications);

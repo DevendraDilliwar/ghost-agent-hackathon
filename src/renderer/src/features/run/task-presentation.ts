@@ -44,9 +44,9 @@ export interface BudgetPreset {
 }
 
 export const BUDGET_PRESETS: readonly BudgetPreset[] = [
-  { id: 'small', label: 'Small', hint: '10 steps · 3 min', maxSteps: 10, maxMinutes: 3 },
-  { id: 'large', label: 'Large', hint: '25 steps · 8 min', maxSteps: 25, maxMinutes: 8 },
-  { id: 'max', label: 'Max', hint: '60 steps · 20 min', maxSteps: 60, maxMinutes: 20 },
+  { id: 'small', label: 'Small', hint: '25 steps · 10 min', maxSteps: 25, maxMinutes: 10 },
+  { id: 'large', label: 'Large', hint: '150 steps · 120 min', maxSteps: 150, maxMinutes: 120 },
+  { id: 'max', label: 'Max', hint: '1000 steps · 480 min', maxSteps: 1000, maxMinutes: 480 },
 ];
 
 /** Matches custom slider values back to a preset, or null when bespoke. */

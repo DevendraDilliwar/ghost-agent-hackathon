@@ -20,18 +20,18 @@ describe('composer budget presets', () => {
   });
 
   it('matches preset values and reports bespoke budgets as null', () => {
-    expect(matchBudgetPreset(10, 3)).toBe('small');
-    expect(matchBudgetPreset(25, 8)).toBe('large');
-    expect(matchBudgetPreset(60, 20)).toBe('max');
+    expect(matchBudgetPreset(25, 10)).toBe('small');
+    expect(matchBudgetPreset(150, 120)).toBe('large');
+    expect(matchBudgetPreset(1000, 480)).toBe('max');
     expect(matchBudgetPreset(25, 5)).toBeNull();
   });
 
   it('marks the active preset pressed and shows all three options', () => {
-    const html = render(25, 8);
+    const html = render(150, 120);
     expect(html).toContain('aria-label="Task budget"');
-    expect(html).toContain('Small budget: 10 steps · 3 min');
-    expect(html).toContain('Large budget: 25 steps · 8 min');
-    expect(html).toContain('Max budget: 60 steps · 20 min');
+    expect(html).toContain('Small budget: 25 steps · 10 min');
+    expect(html).toContain('Large budget: 150 steps · 120 min');
+    expect(html).toContain('Max budget: 1000 steps · 480 min');
     expect(html).toContain('aria-pressed="true"');
   });
 
@@ -41,7 +41,7 @@ describe('composer budget presets', () => {
   });
 
   it('disables preset buttons while a run is busy', () => {
-    const html = render(10, 3, true);
+    const html = render(25, 10, true);
     expect(html).toContain('composer-budget-option is-active" disabled');
   });
 
