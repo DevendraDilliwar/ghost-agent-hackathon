@@ -126,6 +126,17 @@ function formatExtracted(fields: ExtractDecision): string {
  */
 const AUTO_PROCEED_CONFIRMATIONS = ['computer_action_requires_confirmation'];
 
+/**
+ * Typed text matches when words match: grid Tab separators in bulk chunks
+ * and the model's own spacing of read-back text must not fail verification
+ * by themselves. Real typos (different words) still fail.
+ */
+function sameTypedText(observed: string | null, expected: string): boolean {
+  if (observed === null) return false;
+  const squash = (value: string): string => value.trim().replace(/\s+/g, ' ');
+  return squash(observed) === squash(expected);
+}
+
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -637,7 +648,7 @@ export class TaskController {
             this.fail('The run token allowance was reached. No further actions will be dispatched.');
             return;
           }
-          if (check.confirmed && check.destinationConfirmed && check.observedText === text &&
+          if (check.confirmed && check.destinationConfirmed && sameTypedText(check.observedText, text) &&
               execution.observation.activeWindowId === observation.activeWindowId &&
               Number.isSafeInteger(check.verifiedRows) && check.verifiedRows >= 0 && check.verifiedRows <= expectedRows.length) {
             progressed = true;

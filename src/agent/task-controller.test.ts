@@ -813,6 +813,18 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().actions[0]?.verification?.status).toBe('verified_success');
   });
 
+  it('verifies tabbed bulk text against space-separated readback', async () => {
+    const { controller, model } = setup();
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'a\t1\tb\t2' } });
+    model.verifyText.mockResolvedValueOnce({ confirmed: true, observedText: 'a 1 b 2', destinationConfirmed: true, verifiedRows: 0, detail: 'Visible.', inputTokens: 5, outputTokens: 2 });
+    const run = controller.start(configuration);
+    await flush();
+    controller.review(run.runId!, controller.getSnapshot().pendingActionId!, true);
+    await flush();
+    expect(model.verifyText).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().actions[0]?.verification?.status).toBe('verified_success');
+  });
+
   it('does not verify non-type actions', async () => {
     const { controller, model } = setup();
     const run = controller.start(configuration);
