@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ChatThread } from './ChatThread';
+import { ChatThread, shouldStickToBottom } from './ChatThread';
 import type { TaskRuntimeView } from '../run/useTaskRuntime';
 import type { TaskSnapshot } from '../../../../shared/contracts/task';
 
@@ -30,6 +30,13 @@ describe('ChatThread', () => {
     expect(html).toContain('Working on it.');
     expect(html).toContain('Live activity');
     expect(html).toContain('Click the target');
+  });
+
+  it('sticks to live activity only while the reader is already at the bottom', () => {
+    expect(shouldStickToBottom(800, 800)).toBe(true);
+    expect(shouldStickToBottom(950, 800)).toBe(true);
+    expect(shouldStickToBottom(2000, 800)).toBe(false);
+    expect(shouldStickToBottom(400, 800)).toBe(true);
   });
 
   it('keeps completion verification available directly in chat with the workspace closed', () => {

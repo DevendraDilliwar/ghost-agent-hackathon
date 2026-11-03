@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { AlertTriangle, ArrowRight, Sparkles, CheckCircle2, Download, ShieldAlert } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { ActionTimeline } from '../run/ActionTimeline';
@@ -15,6 +16,15 @@ interface ChatThreadProps {
   onOpenSetup: () => void;
 }
 
+/**
+ * True when the thread end is at (or just below) the viewport, meaning the
+ * reader is already following live activity. Far-below means they scrolled
+ * up to read history, so new arrivals must not yank the view.
+ */
+export function shouldStickToBottom(sentinelTop: number, viewportHeight: number, threshold = 200): boolean {
+  return sentinelTop - viewportHeight <= threshold;
+}
+
 /** Scrollable conversation thread: status banners, messages, inline cards, live activity. */
 export function ChatThread({ runtime, onOpenSetup }: ChatThreadProps) {
   const task = runtime.snapshot;
@@ -22,6 +32,15 @@ export function ChatThread({ runtime, onOpenSetup }: ChatThreadProps) {
   const modelReady = runtime.connection?.verified === true;
   const keyPresent = runtime.connection?.configured === true;
   const ready = runtime.connected && modelReady && runtime.readiness?.ready === true;
+  const end = useRef<HTMLDivElement>(null);
+  const actionCount = task?.actions.length ?? 0;
+  const messageCount = task?.messages.length ?? 0;
+  useEffect(() => {
+    const node = end.current;
+    if (!node) return;
+    if (!shouldStickToBottom(node.getBoundingClientRect().top, window.innerHeight)) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [actionCount, messageCount, task?.revision, task?.status]);
 
   return (
     <div className="chat-thread">
@@ -107,6 +126,7 @@ export function ChatThread({ runtime, onOpenSetup }: ChatThreadProps) {
             <ActionTimeline actions={task.actions} />
           </section>
         )}
+        <div ref={end} aria-hidden="true" />
       </div>
     </div>
   );

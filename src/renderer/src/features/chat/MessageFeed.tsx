@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Check, Copy, Download } from 'lucide-react';
 import type { ChatMessage } from '../../../../shared/contracts/task';
 
 export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
-  const end = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState(false);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
   if (!messages.length) return null;
 
   async function copyMessage(message: ChatMessage) {
@@ -31,7 +29,6 @@ export function MessageFeed({ messages }: { messages: ChatMessage[] }) {
         );
       })}
       {copyError && <p role="status" className="composer-feedback">Could not copy. You can select and copy the message text.</p>}
-      <div ref={end} />
     </div>
   );
 }
