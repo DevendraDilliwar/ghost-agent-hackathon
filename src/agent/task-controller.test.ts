@@ -331,14 +331,15 @@ describe('task lifecycle', () => {
       expect(controller.getSnapshot().actions[0]?.status).toBe('executed');
     });
 
-    it('hands control to the user after three failing terminal commands', async () => {
+    it('fails after three auto-resumed walls of failing terminal commands', async () => {
       const run = vi.fn().mockResolvedValue(shellResult({ exitCode: 1, stdout: '', stderr: 'nope' }));
       const { controller, model } = setup({ shell: { run } });
       model.decide.mockResolvedValue(shellDecision('false'));
       controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-      await reviewCommandsUntil(controller, 'needs_user');
-      expect(run).toHaveBeenCalledTimes(3);
-      expect(controller.getSnapshot().handoff?.reason).toContain('Three terminal commands failed');
+      await reviewCommandsUntil(controller, 'failed');
+      expect(run).toHaveBeenCalledTimes(9);
+      expect(model.decide).toHaveBeenCalledTimes(9);
+      expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
     });
 
     it('nudges the model after three terminal commands return identical output', async () => {
@@ -353,14 +354,15 @@ describe('task lifecycle', () => {
       expect(fourthHistory.join('\n')).toContain('byte-identical');
     });
 
-    it('hands control to the user after five terminal commands return identical output', async () => {
+    it('fails after three auto-resumed walls of identical terminal output', async () => {
       const run = vi.fn().mockResolvedValue(shellResult({ stdout: 'same-bytes' }));
       const { controller, model } = setup({ shell: { run } });
       model.decide.mockResolvedValue(shellDecision('ls'));
-      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-      await reviewCommandsUntil(controller, 'needs_user');
-      expect(run).toHaveBeenCalledTimes(5);
-      expect(controller.getSnapshot().handoff?.reason).toContain('identical output');
+      controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 20 });
+      await reviewCommandsUntil(controller, 'failed');
+      expect(run).toHaveBeenCalledTimes(15);
+      expect(model.decide).toHaveBeenCalledTimes(15);
+      expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
     });
 
     it('resets the identical-output streak when terminal output changes', async () => {
@@ -483,14 +485,16 @@ describe('task lifecycle', () => {
     });
   });
 
-  it('retries a failed desktop input instead of failing the run', async () => {
-    const { controller, desktop } = setup();
+  it('retries stalls after a failed desktop input, then fails after three stall cycles', async () => {
+    const { controller, desktop, model } = setup();
     desktop.execute.mockRejectedValueOnce(new Error('windowactivate failed')).mockResolvedValue(undefined);
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(desktop.execute).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(desktop.execute).toHaveBeenCalledTimes(6);
     expect(controller.getSnapshot().actions[0]?.status).toBe('failed');
-    expect(controller.getSnapshot().handoff?.reason).toContain('failed: Click the test target');
+    const retryHistory: string[] = model.decide.mock.calls[2]?.[0].history;
+    expect(retryHistory.join('\n')).toContain('failed: Click the test target');
+    expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
   });
 
   it('lets Stop unwind an in-flight desktop input without failing the run', async () => {
@@ -836,28 +840,28 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().status).toBe('awaiting_approval');
   });
 
-  it('retries once with a note on mismatch, then hands to the user', async () => {
+  it('retries typed mismatches in full access and fails after three stall cycles', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
     model.verifyText.mockResolvedValue({ confirmed: false, detail: 'No text field visible.', inputTokens: 5, outputTokens: 2 });
-    controller.start({ ...configuration, approvalMode: 'full_access' });
-    await flush();
-    await flush();
-    expect(model.verifyText).toHaveBeenCalledTimes(2);
-    expect(model.decide).toHaveBeenCalledTimes(2);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.verifyText).toHaveBeenCalledTimes(6);
+    expect(model.decide).toHaveBeenCalledTimes(6);
     expect(model.decide.mock.calls[1]?.[0].history).toContain('The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, select all first (Ctrl+A), then type again.');
-    expect(controller.getSnapshot().status).toBe('needs_user');
-    expect(controller.getSnapshot().handoff?.kind).toBe('manual');
+    expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
   });
 
-  it('retries a dead typed-text judge instead of failing the run', async () => {
+  it('retries a dead typed-text judge twice per cycle, then fails after three stall cycles', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: '25000' } });
     model.verifyText.mockRejectedValue(new Error('Meta stopped while verifying the screen.'));
-    controller.start({ ...configuration, approvalMode: 'full_access' });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(model.verifyText).toHaveBeenCalledTimes(4);
-    expect(controller.getSnapshot().handoff?.reason).toContain('judge');
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.verifyText).toHaveBeenCalledTimes(12);
+    const retryHistory: string[] = model.decide.mock.calls[2]?.[0].history;
+    expect(retryHistory.join('\n')).toContain('judge');
+    expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
   });
 
   it('retries a dead phase judge once and completes on recovery', async () => {
@@ -870,14 +874,14 @@ describe('task lifecycle', () => {
     expect(model.verifySuccess).toHaveBeenCalledTimes(2);
   });
 
-  it('hands a twice-dead phase judge to the user instead of failing', async () => {
+  it('fails after three stall cycles when the phase judge stays dead', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue(finished);
     model.verifySuccess.mockRejectedValue(new Error('Meta stopped while verifying the screen.'));
     controller.start({ ...configuration, approvalMode: 'full_access' });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(model.verifySuccess).toHaveBeenCalledTimes(2);
-    expect(controller.getSnapshot().handoff?.reason).toContain('judge did not answer');
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.verifySuccess).toHaveBeenCalledTimes(6);
+    expect(controller.getSnapshot().message).toContain('judge did not answer');
   });
 
   it('retries once with correction guidance when the model sends a malformed tool call', async () => {
@@ -920,7 +924,7 @@ describe('task lifecycle', () => {
     const snapper = new UIGroundingEngine();
     const { controller, model } = setup({ grounding: { groundScreen, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     expect(model.decide.mock.calls[0]?.[0].observation).toBeDefined();
     expect(model.decide.mock.calls[1]?.[0].observation).toEqual(frame);
     expect(groundScreen).toHaveBeenCalledTimes(1);
@@ -931,7 +935,7 @@ describe('task lifecycle', () => {
     const { controller, desktop, model } = setup();
     Object.assign(desktop, { listWindows: vi.fn().mockResolvedValue([{ id: '100', title: 'Terminal' }, { id: '200', title: 'Untitled - Writer' }]) });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     const retryHistory: string[] = model.decide.mock.calls[1]?.[0].history;
     expect(retryHistory.join('\n')).toContain('Open windows (2): #100 Terminal | #200 Untitled - Writer');
   });
@@ -942,7 +946,7 @@ describe('task lifecycle', () => {
     const store = { load: async () => [], save };
     const first = setup({ crossTaskMemory: memory, memoryStore: store });
     first.controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(first.controller.getSnapshot().status).toBe('needs_user'));
+    await vi.waitFor(() => expect(first.controller.getSnapshot().status).toBe('failed'));
     expect(memory.mistakesFor('shared')).toHaveLength(1);
     await vi.waitFor(() => expect(save).toHaveBeenCalled());
     const second = setup({ crossTaskMemory: memory });
@@ -990,7 +994,7 @@ describe('task lifecycle', () => {
     const snapper = new UIGroundingEngine();
     const { controller, model } = setup({ grounding: { groundScreen, detectRaw, snapToNearestElement: snapper.snapToNearestElement.bind(snapper) } });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     expect(detectRaw).toHaveBeenCalledTimes(1);
     expect(seen).toHaveLength(1);
     expect(seen[0]).toBeInstanceOf(Promise);
@@ -1007,13 +1011,13 @@ describe('task lifecycle', () => {
     expect(model.decide.mock.calls[1]?.[0].history).toContain('Last step result: PRISM: typed value not visible on screen.');
   });
 
-  it('hands to the user after repeating the identical batch three times', async () => {
+  it('fails after three stall cycles of the identical batch', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue({ ...proposed, actions: [{ type: 'type', text: 'sales.ods' }] });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(model.decide).toHaveBeenCalledTimes(3);
-    expect(controller.getSnapshot().handoff?.reason).toContain('Repeating the same input');
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.decide).toHaveBeenCalledTimes(5);
+    expect(controller.getSnapshot().message).toContain('Repeating the same input');
   });
 
   it('does not flag varied typing as a repeat loop', async () => {
@@ -1027,7 +1031,7 @@ describe('task lifecycle', () => {
     expect(controller.getSnapshot().handoff?.reason ?? '').not.toContain('Repeating the same input');
   });
 
-  it('treats near-identical clicks as the same repeated batch', async () => {
+  it('fails after three stall cycles of near-identical clicks', async () => {
     const { controller, desktop, model } = setup();
     let flip = false;
     const frameB = { ...frame, image: 'data:image/png;base64,ZGlmZmVyZW50' };
@@ -1040,9 +1044,9 @@ describe('task lifecycle', () => {
       .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 851, y: 509, button: 'left' } })
       .mockResolvedValueOnce({ ...proposed, action: { type: 'click', x: 845, y: 511, button: 'left' } });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(model.decide).toHaveBeenCalledTimes(3);
-    expect(controller.getSnapshot().handoff?.reason).toContain('Repeating the same input');
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.decide).toHaveBeenCalledTimes(8);
+    expect(controller.getSnapshot().message).toContain('Repeating the same input');
   });
 
   it('injects the focused app profile into decide history', async () => {
@@ -1268,14 +1272,13 @@ describe('task lifecycle', () => {
     expect(model.decide.mock.calls[1]?.[0].history).toContain('The last action caused no visible change. Do not repeat it unchanged - back out or try a different target.');
   });
 
-  it('hands to the user after two consecutive stalls', async () => {
+  it('retries click stalls in full access and fails after three stall cycles', async () => {
     const { controller, model } = setup();
-    controller.start({ ...configuration, approvalMode: 'full_access' });
-    await flush();
-    await flush();
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     expect(model.verifyText).not.toHaveBeenCalled();
-    expect(controller.getSnapshot().status).toBe('needs_user');
-    expect(controller.getSnapshot().handoff?.kind).toBe('manual');
+    expect(model.decide).toHaveBeenCalledTimes(6);
+    expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
   });
 
   it('resets the no-progress streak after verified progress', async () => {
@@ -1285,14 +1288,13 @@ describe('task lifecycle', () => {
       .mockResolvedValueOnce({ confirmed: false, detail: 'Not visible.', inputTokens: 5, outputTokens: 2 })
       .mockResolvedValueOnce({ confirmed: true, observedText: '25000', destinationConfirmed: true, verifiedRows: 0, detail: 'Visible.', inputTokens: 5, outputTokens: 2 })
       .mockResolvedValueOnce({ confirmed: false, detail: 'Not visible.', inputTokens: 5, outputTokens: 2 })
-      .mockResolvedValueOnce({ confirmed: false, detail: 'Still not visible.', inputTokens: 5, outputTokens: 2 });
-    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 6 });
-    await flush();
-    await flush();
-    await flush();
-    expect(model.verifyText).toHaveBeenCalledTimes(4);
-    expect(model.decide).toHaveBeenCalledTimes(4);
-    expect(controller.getSnapshot().status).toBe('needs_user');
+      .mockResolvedValueOnce({ confirmed: false, detail: 'Still not visible.', inputTokens: 5, outputTokens: 2 })
+      .mockResolvedValue({ confirmed: false, detail: 'Still not visible.', inputTokens: 5, outputTokens: 2 });
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.verifyText).toHaveBeenCalledTimes(8);
+    expect(model.decide).toHaveBeenCalledTimes(8);
+    expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
   });
 
   it('recovers when the typed-text judge fails once and answers on retry', async () => {
@@ -1391,26 +1393,26 @@ describe('mission planning and checkpoints', () => {
     expect(model.verifySuccess.mock.calls[0]?.[0].steps).toEqual(['First', 'Second']);
   });
 
-  it('retries a failed phase with a refocus note and fresh stall streaks', async () => {
+  it('retries a failed phase with a refocus note, then fails after three stall cycles', async () => {
     const store = stubStore({ missionId: 'm-1', goal: 'Ship the repo', createdAt: 1 }, [
       savedPhase({ status: 'failed', notes: ['FAILED: stuck'], noProgressStreak: 2 }),
     ]);
     const { controller, desktop } = setup({ checkpoints: store });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10, resume: { missionId: 'm-1', note: 'Retry requested from step 1.' } });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(desktop.execute).toHaveBeenCalledTimes(2);
-    expect(controller.getMissionPlan()?.phases[0]?.status).toBe('active');
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(desktop.execute).toHaveBeenCalledTimes(6);
+    expect(controller.getMissionPlan()?.phases[0]?.status).toBe('failed');
     expect(controller.getMissionPlan()?.phases[0]?.notes).toContain('Retry requested from step 1.');
   });
 
-  it('keeps restored stall streaks on a plain resume without a retry note', async () => {
+  it('keeps restored stall streaks on a plain resume, then fails after three stall cycles', async () => {
     const store = stubStore({ missionId: 'm-1', goal: 'Ship the repo', createdAt: 1 }, [
       savedPhase({ status: 'failed', notes: ['FAILED: stuck'], noProgressStreak: 2 }),
     ]);
     const { controller, desktop } = setup({ checkpoints: store });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10, resume: { missionId: 'm-1' } });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(desktop.execute).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(desktop.execute).toHaveBeenCalledTimes(5);
   });
 
   it('plans domain phases after intent and advances when the model stops mid-mission', async () => {
@@ -1499,29 +1501,23 @@ describe('self-fix error loop', () => {
     expect(controller.getSnapshot().status).not.toBe('needs_user');
   });
 
-  it('escalates with the full story after two consecutive stalls', async () => {
-    const { controller } = setup();
-    controller.start({ ...configuration, approvalMode: 'full_access' });
-    await flush();
-    await flush();
-    await flush();
+  it('auto-resumes with the full story after two consecutive stalls', async () => {
+    const { controller, model } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     const snapshot = controller.getSnapshot();
-    expect(snapshot.status).toBe('needs_user');
-    expect(snapshot.handoff?.kind).toBe('manual');
-    expect(snapshot.handoff?.reason).toContain('[shared]');
-    expect(snapshot.handoff?.reason).toContain('Attempts: executed:');
-    expect(snapshot.handoff?.reason).toContain('Already tried:');
-    expect(snapshot.handoff?.reason).toContain('Take control of the desktop');
+    expect(snapshot.message).toContain('Stopped after 3 stalls');
+    expect(snapshot.message).toContain('[shared]');
+    const retryHistory: string[] = model.decide.mock.calls[2]?.[0].history;
+    expect(retryHistory.join('\n')).toContain('Attempts: executed:');
+    expect(retryHistory.join('\n')).toContain('Already tried:');
   });
 
-  it('fails the run after three stall handoffs without progress', async () => {
-    const { controller } = setup();
+  it('fails the run after three auto-resumed stall cycles without progress', async () => {
+    const { controller, model } = setup();
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    controller.resume(controller.getSnapshot().runId!);
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    controller.resume(controller.getSnapshot().runId!);
     await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.decide).toHaveBeenCalledTimes(6);
     expect(controller.getSnapshot().message).toContain('3 stalls');
     expect(controller.getSnapshot().handoff).toBeNull();
   });
@@ -1566,14 +1562,16 @@ describe('self-fix error loop', () => {
     expect(phases.map(phase => phase.status)).toEqual(['failed', 'active']);
   });
 
-  it('escalates after two replans without progress', async () => {
+  it('fails after three stall cycles when replans are exhausted', async () => {
     const { controller, model } = setup();
     model.decide.mockResolvedValue(finished);
     model.verifySuccess.mockResolvedValue({ confirmed: false, detail: 'Blank page.', inputTokens: 5, outputTokens: 2 });
     controller.start({ ...configuration, approvalMode: 'full_access' });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     expect(model.plan).toHaveBeenCalledTimes(3);
-    expect(controller.getSnapshot().handoff?.reason).toContain('Phase success not met: Blank page.');
+    expect(model.decide).toHaveBeenCalledTimes(8);
+    expect(model.verifySuccess).toHaveBeenCalledTimes(8);
+    expect(controller.getSnapshot().message).toContain('Phase success not met: Blank page.');
   });
 
   it('fails the run after repeated unmet-success handoffs without progress', async () => {
@@ -1738,8 +1736,8 @@ describe('hardening regressions', () => {
     model.decide.mockResolvedValue({ ...proposed, action: { type: 'type', text: 'AUDIT_CANARY' } });
     model.verifyText.mockResolvedValue({ confirmed: false, detail: 'Text absent.', inputTokens: 1, outputTokens: 1 });
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
-    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('needs_user'));
-    expect(model.verifyText).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
+    expect(model.verifyText).toHaveBeenCalledTimes(6);
     expect(controller.getSnapshot().actions.every(action => action.verification?.status !== 'verified_success')).toBe(true);
   });
 });

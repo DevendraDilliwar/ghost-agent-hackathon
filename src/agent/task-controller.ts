@@ -145,7 +145,7 @@ export class TaskController {
   private pending: { action: DesktopCommand; observation: ScreenObservation } | null = null;
   /** Terminal command awaiting approval. Never set together with pending. */
   private pendingShell: string | null = null;
-  /** Consecutive failed shell commands. Three in a row hands control to the user. */
+  /** Consecutive failed shell commands. Three in a row park on the user (ask mode) or auto-resume toward the 3-stall fail (full access). */
   private shellFailures = 0;
   /** Signature of the last successful shell output; identical repeats signal a check-loop. */
   private lastShellOutput: string | null = null;
@@ -695,9 +695,11 @@ export class TaskController {
           const loopReason = ('Repeating the same input 3 times in a row (' +
             execution.actions.map(item => this.dependencies.describe(item)).join(' → ').slice(0, 200) +
             '). The step may already have worked — check the target app (a saved file may already exist), fix the screen, then resume - or stop the run.').slice(0, 1000);
+          if (this.cappedStall(loopReason)) return;
           this.record('stall', 'stalled', loopReason.slice(0, 200));
           this.learnFromHandoff(loopReason);
           this.yieldToUser({ kind: 'manual', reason: loopReason });
+          if (this.approvalMode === 'full_access') this.autoResumeFromStall(loopReason);
           return;
         }
         if (progressed) {
@@ -728,6 +730,7 @@ export class TaskController {
             this.record('stall', 'stalled', recovery.reason.slice(0, 200));
             this.learnFromHandoff(recovery.reason);
             this.yieldToUser({ kind: 'manual', reason: recovery.reason });
+            if (this.approvalMode === 'full_access') this.autoResumeFromStall(recovery.reason);
             return;
           }
         }
@@ -1009,8 +1012,9 @@ export class TaskController {
    * Runs one terminal command and records its text output as the observation.
    * Fresh output counts as progress: the model reads the text and self-corrects,
    * so no screenshot or paid re-check is needed. Three failing commands in a row,
-   * or five byte-identical outputs in a row, hand control to the user instead
-   * of looping; the third identical output first nudges the model to act.
+   * or five byte-identical outputs in a row, park on the user (ask mode) or
+   * auto-resume toward the 3-stall fail (full access); the third identical
+   * output first nudges the model to act.
    */
   private async runShellStep(signal: AbortSignal, generation: number, command: string, reuseId: string | null): Promise<void> {
     const port = this.dependencies.shell!;
@@ -1043,9 +1047,14 @@ export class TaskController {
       actions: this.state.actions.map(item => item.id === id ? { ...item, status: failed ? 'failed' : 'executed', text: output.slice(0, 2000), verification } : item),
     };
     this.unmetStreak = 0;
-    this.noProgressStreak = 0;
-    this.stallCycles = 0;
-    this.lastGuidance = null;
+    // Fresh output counts as progress; failures and byte-identical repeats
+    // must not forgive the stall cap, or loop walls would never accumulate.
+    const signature = result.exitCode + '\n' + output;
+    if (!failed && signature !== this.lastShellOutput) {
+      this.noProgressStreak = 0;
+      this.stallCycles = 0;
+      this.lastGuidance = null;
+    }
     this.record('verify', failed ? 'failure' : 'success',
       'Shell: exit ' + result.exitCode + ' (' + output.length + ' output chars).', { stepId: id, durationMs: shellMs });
     this.persistPhase();
@@ -1054,7 +1063,6 @@ export class TaskController {
       this.phaseShellCommands.push(command);
       // Same bytes back means the world did not change: the model is
       // re-checking instead of acting (the T5 mkdir/screenshot ping-pong).
-      const signature = result.exitCode + '\n' + output;
       if (signature === this.lastShellOutput) this.shellRepeatStreak += 1;
       else {
         this.lastShellOutput = signature;
@@ -1065,8 +1073,10 @@ export class TaskController {
         const repeatReason = ('Five terminal commands in a row returned identical output. Last: $ ' + command.slice(0, 200) +
           ' → exit ' + result.exitCode + ' (' + output.length + ' chars, unchanged). The agent is re-checking instead of acting.' +
           ' Take control of the desktop, move the task forward, then resume - or stop the run.').slice(0, 1000);
+        if (this.cappedStall(repeatReason)) return;
         this.learnFromHandoff(repeatReason);
         this.yieldToUser({ kind: 'manual', reason: repeatReason });
+        if (this.approvalMode === 'full_access') this.autoResumeFromStall(repeatReason);
       } else if (this.shellRepeatStreak === 3) {
         this.shellRepeatNote = 'Your last 3 terminal commands returned byte-identical output: the desktop state is not changing.' +
           ' Do not run another checking command — take a different action that moves the goal forward' +
@@ -1081,8 +1091,10 @@ export class TaskController {
       const shellReason = ('Three terminal commands failed in a row. Last: $ ' + command.slice(0, 200) +
         ' → exit ' + result.exitCode + ': ' + excerpt.slice(0, 300) +
         ' Take control of the desktop, fix the terminal state, then resume - or stop the run.').slice(0, 1000);
+      if (this.cappedStall(shellReason)) return;
       this.learnFromHandoff(shellReason);
       this.yieldToUser({ kind: 'manual', reason: shellReason });
+      if (this.approvalMode === 'full_access') this.autoResumeFromStall(shellReason);
     }
   }
 
@@ -1342,8 +1354,10 @@ export class TaskController {
           verificationSummary: 'Phase work finished but the success judge did not answer. The files may already be complete — verify them before resuming or stopping.',
           priorGuidance: this.lastGuidance,
         });
+        if (this.cappedStall(judgeReason)) return false;
         this.learnFromHandoff(judgeReason);
         this.yieldToUser({ kind: 'manual', reason: judgeReason });
+        if (this.approvalMode === 'full_access') this.autoResumeFromStall(judgeReason);
         return false;
       }
     }
@@ -1390,6 +1404,7 @@ export class TaskController {
       if (this.cappedStall(reason)) return false;
       this.learnFromHandoff(reason);
       this.yieldToUser({ kind: 'manual', reason });
+      if (this.approvalMode === 'full_access') this.autoResumeFromStall(reason);
       return false;
     }
     this.unmetNote = 'Phase success not met (' + check.detail.slice(0, 200) + '). The phase is not done - keep working towards: ' + phase.success;
@@ -1664,6 +1679,33 @@ export class TaskController {
     this.fail(('Stopped after 3 stalls with no progress even after resume. Last wall: ' + reason.slice(0, 400) +
       ' Fix the screen, then start a new run from the kept goal.').slice(0, 1000));
     return true;
+  }
+
+  /**
+   * Full-access stall escape: the stall cap already ran before the yield,
+   * so reaching here means retry from a fresh observation with the full
+   * wall text in history. A racing Stop wins: resume() then throws and the
+   * stopped status stands.
+   */
+  private autoResumeFromStall(wallText: string): void {
+    this.resumedHistory.push('Auto-resumed in full access (no user at the screen). Last wall: ' + wallText);
+    // Nobody touched the desktop: keep shell loop-tracking continuous
+    // across the resume instead of letting resume() wipe it as if a human
+    // had stepped in (the wipe would forgive loop walls forever).
+    const shellOutput = this.lastShellOutput;
+    const shellStreak = this.shellRepeatStreak;
+    const shellNote = this.shellRepeatNote;
+    try {
+      const runId = this.state.runId;
+      if (!runId) return;
+      this.resume(runId);
+    } catch {
+      // A synchronous listener (eval stop) settled the run first.
+      return;
+    }
+    this.lastShellOutput = shellOutput;
+    this.shellRepeatStreak = shellStreak;
+    this.shellRepeatNote = shellNote;
   }
 
   private fail(message: string): void {
