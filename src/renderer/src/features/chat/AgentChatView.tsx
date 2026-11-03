@@ -85,6 +85,15 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
     }
     closeMobileSidebar();
   };
+  const deleteRun = (runId: string) => {
+    if (runId === task?.runId) return;
+    if (runId === viewingId) { setViewingId(null); setViewRecord(null); }
+    setRuns(found => found.filter(run => run.runId !== runId));
+    void runtime.deleteRun(runId).then(
+      () => { void listRuns().then(found => setRuns(found), () => undefined); },
+      () => { void listRuns().then(found => setRuns(found), () => undefined); },
+    );
+  };
   const resumeViewed = () => {
     if (!viewRecord?.missionId) return;
     launch({ goal: viewRecord.goal, maxSteps, maxMinutes, approvalMode, screenConsent, isolatedEnvironment, resume: { missionId: viewRecord.missionId } });
@@ -123,7 +132,7 @@ export function AgentChatView({ runtime }: { runtime: TaskRuntimeView }) {
           <button type="button" aria-label="Library" title="Library" aria-pressed={showMissions} onClick={() => { setShowMissions(value => !value); closeMobileSidebar(); }}><LayoutGrid /><span>Library</span></button>
           <button type="button" className="navigation-settings" aria-label="Settings" title="Settings" disabled={active} onClick={openSetup}><Hexagon /><span>Settings</span></button>
         </nav>
-        <TaskHistoryList runs={summaries} activeRunId={task?.runId ?? null} selectedRunId={viewingId} search={search} onSelect={selectRun} />
+        <TaskHistoryList runs={summaries} activeRunId={task?.runId ?? null} selectedRunId={viewingId} search={search} onSelect={selectRun} onDelete={deleteRun} />
         <div className="navigation-account">
           <span className="account-avatar reference-avatar" role="img" aria-label="Local session">G</span>
           <div><span>Local session</span></div>

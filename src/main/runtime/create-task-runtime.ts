@@ -212,6 +212,13 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
     loadRun(runId: string): Promise<RunRecord | null> {
       return history.loadRun(runId);
     },
+    async deleteRun(runId: string): Promise<void> {
+      const live = controller.getSnapshot();
+      if (live.runId === runId && !['idle', 'completed', 'stopped', 'failed'].includes(live.status)) return;
+      attachmentNames.delete(runId);
+      await history.deleteRun(runId);
+      void attachmentStore.pruneAttachments(runId).catch(() => undefined);
+    },
     async testConnection(candidate: unknown) {
       if (!['idle', 'completed', 'stopped', 'failed'].includes(controller.getSnapshot().status)) throw new Error('Stop the current task before changing the model connection.');
       if (candidate && typeof candidate === 'object') {

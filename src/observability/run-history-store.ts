@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDomainId } from '../shared/contracts/mission';
 import type { MissionPlan, PhaseRecord, PhaseStatus } from '../shared/contracts/mission';
@@ -36,6 +36,16 @@ export class RunHistoryStore {
       return validRecord(parsed, runId);
     } catch {
       return null;
+    }
+  }
+
+  /** Removes one run record. Invalid ids and missing files are silent no-ops. */
+  async deleteRun(runId: string): Promise<void> {
+    try {
+      if (!idPattern.test(runId)) return;
+      await unlink(join(this.baseDir, runId + '.json')).catch(() => undefined);
+    } catch {
+      // Deletion never breaks the app; the list simply keeps the entry.
     }
   }
 

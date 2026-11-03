@@ -26,6 +26,20 @@ function storedRecord(runId: string, updatedAt: number): Record<string, unknown>
 }
 
 describe('RunHistoryStore', () => {
+  it('deletes one run without touching the rest', async () => {
+    const store = new RunHistoryStore(await mkdtemp(join(tmpdir(), 'nomcp-history-')));
+    const directory = await mkdtemp(join(tmpdir(), 'nomcp-history-'));
+    const seeded = new RunHistoryStore(directory);
+    await writeFile(join(directory, 'r-old.json'), JSON.stringify(storedRecord('r-old', 5)));
+    await writeFile(join(directory, 'r-new.json'), JSON.stringify(storedRecord('r-new', 6)));
+    await seeded.deleteRun('r-old');
+    expect(await seeded.loadRun('r-old')).toBeNull();
+    expect((await seeded.listRuns()).map(run => run.runId)).toEqual(['r-new']);
+    await expect(seeded.deleteRun('../escape')).resolves.toBeUndefined();
+    await expect(seeded.deleteRun('missing')).resolves.toBeUndefined();
+    await expect(store.deleteRun('run-1')).resolves.toBeUndefined();
+  });
+
   it('round-trips run records and keeps the first createdAt', async () => {
     const store = new RunHistoryStore(await mkdtemp(join(tmpdir(), 'nomcp-history-')));
     const record = toRunRecord(snapshot({}))!;

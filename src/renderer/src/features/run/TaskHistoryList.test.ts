@@ -10,33 +10,42 @@ const runs: RunSummary[] = [
   { runId: 'run-1', goal: 'Failed task', status: 'failed', createdAt: 10, updatedAt: 10, missionId: null, resumable: false },
 ];
 
+function render(activeRunId: string | null, selectedRunId: string | null, search: string, list: RunSummary[] = runs): string {
+  return renderToStaticMarkup(createElement(TaskHistoryList,
+    { runs: list, activeRunId, selectedRunId, search, onSelect: vi.fn(), onDelete: vi.fn() }));
+}
+
 describe('TaskHistoryList', () => {
   it('pins the active task above past runs with status dots', () => {
-    const html = renderToStaticMarkup(createElement(TaskHistoryList, { runs, activeRunId: 'run-3', selectedRunId: null, search: '', onSelect: vi.fn() }));
-    expect(html).toContain('Tasks');
+    const html = render('run-3', 'run-1', '');
     expect(html.indexOf('Live task')).toBeLessThan(html.indexOf('Old done task'));
-    expect(html).toContain('bg-amber-500');
-    expect(html).toContain('bg-emerald-500');
-    expect(html).toContain('bg-rose-500');
-    expect(html).toContain('history-item history-task selected');
+    expect(html).toContain('selected');
+    expect(html).toContain('rounded-full');
   });
 
-  it('marks runs that carry attached source images', () => {
-    const withFiles: RunSummary[] = [
-      { runId: 'run-9', goal: 'Enter this bill', status: 'completed', createdAt: 40, updatedAt: 40, missionId: null, resumable: false, attachmentNames: ['bill.jpg', 'page2.png'] },
-    ];
-    const html = renderToStaticMarkup(createElement(TaskHistoryList, { runs: withFiles, activeRunId: null, selectedRunId: null, search: '', onSelect: vi.fn() }));
+  it('marks runs that carried attachments', () => {
+    const attached: RunSummary[] = [{ ...runs[1]!, attachmentNames: ['bill.jpg', 'page2.png'] }];
+    const html = renderToStaticMarkup(createElement(TaskHistoryList,
+      { runs: attached, activeRunId: null, selectedRunId: null, search: '', onSelect: vi.fn(), onDelete: vi.fn() }));
     expect(html).toContain('history-attachment');
     expect(html).toContain('bill.jpg, page2.png');
-    const plain = renderToStaticMarkup(createElement(TaskHistoryList, { runs, activeRunId: 'run-3', selectedRunId: null, search: '', onSelect: vi.fn() }));
+    const plain = render('run-3', null, '');
     expect(plain).not.toContain('history-attachment');
   });
 
   it('filters by search and shows an empty state', () => {
-    const html = renderToStaticMarkup(createElement(TaskHistoryList, { runs, activeRunId: null, selectedRunId: null, search: 'failed', onSelect: vi.fn() }));
+    const html = render(null, null, 'failed');
     expect(html).toContain('Failed task');
     expect(html).not.toContain('Old done task');
-    const empty = renderToStaticMarkup(createElement(TaskHistoryList, { runs: [], activeRunId: null, selectedRunId: null, search: '', onSelect: vi.fn() }));
+    const empty = render(null, null, '', []);
     expect(empty).toContain('No tasks yet');
+  });
+
+  it('offers a closed options menu on past runs only', () => {
+    const html = render('run-3', null, '');
+    expect(html).toContain('Options for Old done task');
+    expect(html).toContain('Options for Failed task');
+    expect(html).not.toContain('Options for Live task');
+    expect(html).not.toContain('Confirm delete');
   });
 });

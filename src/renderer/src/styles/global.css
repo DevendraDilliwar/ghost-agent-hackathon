@@ -399,6 +399,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .navigation-history-title { font-size: 14px; font-weight: 400; color: var(--chat-muted); padding: 0 9px 7px; }
 .history-item.history-task { display: flex; align-items: center; gap: 8px; }
 .history-task-goal { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.history-item.history-task { position: relative; }
+.history-task-select { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.history-menu-button { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; border: 0; background: transparent; color: var(--chat-muted); cursor: pointer; }
+.history-menu-button:hover { background: var(--chat-hover); color: inherit; }
+.history-menu { position: absolute; right: 8px; top: 100%; z-index: 20; display: flex; flex-direction: column; min-width: 132px; padding: 4px; border-radius: 10px; background: #2b2b2b; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.history-menu [role="menuitem"] { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: #e3e3e3; font-size: 13px; cursor: pointer; text-align: left; }
+.history-menu [role="menuitem"]:hover { background: #3a3a3a; }
+.history-menu-delete, .history-menu-confirm { color: #f1a9a9; }
+.chat-dashboard[data-theme="light"] .history-menu { background: #ffffff; box-shadow: 0 8px 24px rgba(15,23,42,.18); }
+.chat-dashboard[data-theme="light"] .history-menu [role="menuitem"] { color: #1e293b; }
+.chat-dashboard[data-theme="light"] .history-menu [role="menuitem"]:hover { background: #f1f5f9; }
+.chat-dashboard[data-theme="light"] .history-menu-delete, .chat-dashboard[data-theme="light"] .history-menu-confirm { color: #b91c1c; }
 .viewing-banner { display: flex; align-items: center; gap: 10px; padding: 10px 32px; font-size: 12px; color: var(--chat-muted); }
 .viewing-banner > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .viewing-banner button { border-radius: 16px; padding: 5px 12px; background: var(--chat-hover); color: var(--chat-text); font-size: 12px; white-space: nowrap; }

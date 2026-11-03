@@ -193,6 +193,20 @@ describe('run history attachment names', () => {
     const runs = await runtime.listRuns();
     expect(runs.find(run => run.runId === task.runId)?.attachmentNames).toEqual(['bill.jpg']);
   });
+
+  it('deletes a finished run from history without touching the live controller', async () => {
+    const runtime = setup();
+    await runtime.testConnection('fake-session-key');
+    const task = runtime.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(runtime.controller.getSnapshot().status).toBe('verifying'));
+    runtime.controller.confirm(task.runId!, true);
+    await vi.waitFor(async () => {
+      expect((await runtime.listRuns()).find(run => run.runId === task.runId)?.status).toBe('completed');
+    });
+    await runtime.deleteRun(task.runId!);
+    expect((await runtime.listRuns()).find(run => run.runId === task.runId)).toBeUndefined();
+    await expect(runtime.deleteRun('../escape')).resolves.toBeUndefined();
+  });
 });
 
 describe('model connection across tasks in one app session', () => {

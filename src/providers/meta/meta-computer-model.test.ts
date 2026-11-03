@@ -33,6 +33,7 @@ describe('Meta computer-use adapter', () => {
     const body = JSON.parse(String(request.mock.calls[0]![1]?.body));
     expect(body.instructions).toContain('State check first');
     expect(body.instructions).toContain('screen is truth');
+    expect(body.instructions).toContain('never substitute a shell command');
   });
 
   it('does not echo provider error bodies or credentials into user-visible errors', async () => {
@@ -351,6 +352,17 @@ describe('Meta computer-use adapter', () => {
     const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
     await model.fillPlan({ goal: 'Add 50 dummy rows', summary: 'Bulk entry', data: '', signal: new AbortController().signal });
     expect(String(request.mock.calls[0]![1]?.body)).toContain('dummy or sample rows');
+  });
+
+  it('never treats prose as fill rows', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 60, output_tokens: 25 },
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"units":[],"chunkRows":5,"startHint":""}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const result = await model.fillPlan({ goal: 'Write a note', summary: 'Prose', data: '', signal: new AbortController().signal });
+    expect(String(request.mock.calls[0]![1]?.body)).toContain('never row tasks');
+    expect(result.units).toEqual([]);
   });
 
   it('plans ordered domain phases without tools or screenshots', async () => {

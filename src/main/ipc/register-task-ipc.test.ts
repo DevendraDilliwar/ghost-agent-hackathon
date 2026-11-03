@@ -48,6 +48,22 @@ describe('task and setup IPC boundary', () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it('deletes a run only for the trusted task window with a valid id', async () => {
+    const frame = { url: 'file:///app/index.html' };
+    const contents = { mainFrame: frame };
+    const window = { isDestroyed: () => false, webContents: contents } as unknown as BrowserWindow;
+    const deleteRun = vi.fn().mockResolvedValue(undefined);
+    const runtime = { deleteRun } as unknown as TaskRuntime;
+    registerTaskIpc(window, frame.url, runtime, async () => undefined);
+    const handlers = new Map(vi.mocked(ipcMain.handle).mock.calls.map(([channel, handler]) => [channel, handler]));
+    const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent;
+    const remove = handlers.get(IPC_CHANNELS.deleteRun)!;
+    await expect(remove(event, 'run-9')).resolves.toBeUndefined();
+    expect(deleteRun).toHaveBeenCalledWith('run-9');
+    expect(() => remove(event, '../escape')).toThrow('Invalid run identifier');
+    expect(() => remove({ ...event, sender: {} } as IpcMainInvokeEvent, 'run-9')).toThrow('Rejected');
+  });
+
   it('lists saved missions only for the trusted task window', async () => {
     const missions = [{ missionId: 'm-1', goal: 'Ship it', createdAt: 1, updatedAt: 2, phases: [] }];
     const frame = { url: 'file:///app/index.html' };

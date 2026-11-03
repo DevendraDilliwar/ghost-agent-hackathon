@@ -15,6 +15,7 @@ export const IPC_CHANNELS = {
   listMissions: 'mission:list',
   listRuns: 'history:list',
   getRun: 'history:get',
+  deleteRun: 'history:delete',
   taskChanged: 'task:changed',
   controlsSnapshot: 'controls:get-snapshot',
   controlsPause: 'controls:pause',

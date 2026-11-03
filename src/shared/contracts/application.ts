@@ -31,5 +31,6 @@ export interface DesktopBridge {
   listMissions(): Promise<MissionSummary[]>;
   listRuns(): Promise<RunSummary[]>;
   getRun(runId: string): Promise<RunRecord | null>;
+  deleteRun(runId: string): Promise<void>;
   onTaskChanged(listener: (snapshot: TaskSnapshot) => void): () => void;
 }

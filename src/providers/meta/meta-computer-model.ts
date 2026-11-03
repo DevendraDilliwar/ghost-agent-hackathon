@@ -22,6 +22,7 @@ const instructions = [
   'run_shell IS the terminal: never open or type into the Terminal app for plain commands.',
   'To launch a GUI app from run_shell, fully detach it with redirected output (nohup myapp >/tmp/myapp.log 2>&1 & echo started); prefer this over a bare & so the app never depends on the shell call.',
   'Never use run_shell for passwords, secrets, privilege escalation (no sudo or su), destructive commands, or fetching remote code into a shell. Read run_shell output as your observation: no screenshot follows a shell call.',
+  'When the goal names a GUI app window to work in (Files, Text Editor, Calc, Writer, Settings), do that visible work with mouse and keyboard in the app - never substitute a shell command for an action the user expects to see in the app. Shell stays for checks and confirmations (ls, file exists).',
   'If the app you need is already open and focused, use it instead of opening it again. When you need a fresh terminal, open a new window or tab rather than reusing a busy one.',
   'State check first on every step: read the focused app and file from the screenshot and the window list. If the focused app is not the one the goal needs, open or focus the right app before anything else; if the right app shows the wrong file, open or create the right file first.',
   'The plan steps are a suggestion; the screen is truth. When the screen needs a different first move (right app, right file, dismissed popup), do that instead of the next planned step.',
@@ -93,6 +94,7 @@ const fillPlanInstructions = [
   'Exception: when the goal asks for a number of dummy or sample rows without giving values, invent that many plausible rows in the requested columns.',
   'chunkRows (1-10) is how many rows to type per round; prefer 5. startHint (under 200 chars) says where typing should begin.',
   'When the goal is not a row-by-row entry task, return {"units": []} with chunkRows 5 and an empty startHint.',
+  'Prose, letters, notes, and paragraphs are never row tasks, even when multi-line - return {"units": []} for those; rows means grid or table cells only.',
 ].join(' ');
 
 export class MetaComputerModel implements ModelPort {
