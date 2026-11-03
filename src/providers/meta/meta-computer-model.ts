@@ -5,6 +5,7 @@ import { parsePlanResponse } from './parse-plan';
 import { parseVerifyResponse } from './parse-verify';
 import { parseSourceResponse } from './parse-source';
 import { parseExtractResponse } from './parse-extract';
+import { parseFillPlanResponse } from './parse-fillplan';
 import { requestMeta } from './meta-request';
 import type { MetaConfiguration } from './meta-request';
 
@@ -81,6 +82,14 @@ const extractInstructions = [
   'Schema: {"billNo": "string", "date": "string", "total": "string", "items": [{"name": "string", "qty": "string", "price": "string"}], "missing": ["free-form gaps"]}.',
   'Use "" for any value not clearly present and name it in missing (for example "row 3 price"). Never invent values.',
   'At most 50 items and 10 missing entries.',
+].join(' ');
+
+const fillPlanInstructions = [
+  'You convert data-entry source material into an ordered fill list. Reply with exactly one JSON object and nothing else: no markdown, no code fences, no explanation.',
+  'Schema: {"units": [{"cells": ["Lamp", "12", "450"]}], "chunkRows": 5, "startHint": "first empty row below existing data"}.',
+  'One unit per row, cells left-to-right as plain strings. Preserve every value verbatim from the goal or data - never invent, reorder, or drop rows. At most 200 units, 10 cells each, 200 chars per cell.',
+  'chunkRows (1-10) is how many rows to type per round; prefer 5. startHint (under 200 chars) says where typing should begin.',
+  'When the goal is not a row-by-row entry task, return {"units": []} with chunkRows 5 and an empty startHint.',
 ].join(' ');
 
 export class MetaComputerModel implements ModelPort {
@@ -201,6 +210,17 @@ export class MetaComputerModel implements ModelPort {
       ] }],
     }, input.signal, this.request);
     return parseExtractResponse(response);
+  }
+
+  async fillPlan(input: Parameters<ModelPort['fillPlan']>[0]) {
+    const response = await requestMeta(this.config, {
+      max_output_tokens: 2048, reasoning: { effort: 'low' }, instructions: fillPlanInstructions,
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: 'Goal: ' + input.goal + '\nIntent: ' + input.summary +
+          (input.data ? '\nData:\n' + input.data.slice(0, 4000) : '') + '\nReturn only the JSON object.' },
+      ] }],
+    }, input.signal, this.request);
+    return parseFillPlanResponse(response);
   }
 
   async verifyText(input: Parameters<ModelPort['verifyText']>[0]) {

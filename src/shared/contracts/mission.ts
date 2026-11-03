@@ -81,6 +81,10 @@ export interface PhaseCheckpoint {
   readonly completedSteps?: number[];
   /** Zero-based live step pointer. Absent in checkpoints written before step tracking. */
   readonly activeStep?: number | null;
+  /** Fill-queue rows marked done. Absent when the run has no fill queue. */
+  readonly fillDone?: number;
+  /** Fill-queue size when saved. Absent when the run has no fill queue. */
+  readonly fillTotal?: number;
   readonly savedAt: number;
 }
 

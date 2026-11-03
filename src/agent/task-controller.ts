@@ -142,6 +142,13 @@ export class TaskController {
   private attachments: RunAttachmentInput[] = [];
   private extracted: ExtractDecision | null = null;
   private extractAsked = false;
+  /** Fill queue: ordered row units built once per run; empty when the task is not bulk entry. */
+  private fillUnits: string[][] = [];
+  private fillDone = 0;
+  private fillChunk = 5;
+  private fillStartHint = '';
+  private fillPlanned = false;
+  private restoredFillDone = 0;
   /** Last seen foreground window, narrated to the model so it knows where it is. */
   private lastWindowId: string | null = null;
   private lastWindowTitle: string | null = null;
@@ -208,6 +215,12 @@ export class TaskController {
     this.attachments = configuration.attachments ?? [];
     this.extracted = null;
     this.extractAsked = false;
+    this.fillUnits = [];
+    this.fillDone = 0;
+    this.fillChunk = 5;
+    this.fillStartHint = '';
+    this.fillPlanned = false;
+    this.restoredFillDone = 0;
     this.lastWindowId = null;
     this.lastWindowTitle = null;
     this.focusChanges = [];
@@ -480,6 +493,58 @@ export class TaskController {
     return true;
   }
 
+  /**
+   * Builds the fill queue once per run: the model turns prompt/photo data
+   * into ordered row units, then each round types one chunk and marks it.
+   * Single-line goals without a photo skip the call (no entry data to list).
+   */
+  private async ensureFillPlan(signal: AbortSignal, generation: number): Promise<boolean> {
+    if (this.fillPlanned) return true;
+    this.fillPlanned = true;
+    if (!this.extracted && (this.state.goal.match(/\n/g) ?? []).length < 2) return true;
+    const queue = await this.dependencies.model.fillPlan({
+      goal: this.state.goal, summary: this.state.intent?.summary ?? '',
+      data: this.extracted ? formatExtracted(this.extracted) : '', signal,
+    });
+    if (!this.current(generation, signal)) return false;
+    const inputTokens = this.state.inputTokens + queue.inputTokens;
+    const outputTokens = this.state.outputTokens + queue.outputTokens;
+    this.state = { ...this.state, inputTokens, outputTokens };
+    const budget = this.tokenBudget();
+    if (inputTokens > budget.input || outputTokens > budget.output) {
+      this.fail('The run token allowance was reached. No further actions will be dispatched.');
+      return false;
+    }
+    this.fillUnits = queue.units.map(unit => [...unit.cells]);
+    this.fillChunk = queue.chunkRows;
+    this.fillStartHint = queue.startHint;
+    this.fillDone = Math.min(this.restoredFillDone, this.fillUnits.length);
+    if (this.fillUnits.length) {
+      this.record('verify', 'success', 'Fill plan ready (' + this.fillUnits.length + ' rows'
+        + (this.fillDone ? ', resuming at row ' + (this.fillDone + 1) : '') + ').');
+    }
+    return true;
+  }
+
+  /**
+   * Marks fill-queue rows done after a verified bulk (tabbed) type. Rows are
+   * estimated from tab-separated cells over the queue width; single-cell
+   * types leave the marks alone. The final judge stays the source of truth.
+   */
+  private markFillChunk(actions: DesktopCommand[]): void {
+    if (!this.fillUnits.length || this.fillDone >= this.fillUnits.length) return;
+    const width = Math.max(1, this.fillUnits[0]?.length ?? 1);
+    let rows = 0;
+    for (const item of actions) {
+      if (item.type !== 'type' || !item.text.includes('\t')) continue;
+      rows += Math.max(1, Math.round(item.text.split('\t').length / width));
+    }
+    if (!rows) return;
+    this.fillDone = Math.min(this.fillUnits.length, this.fillDone + rows);
+    this.record('verify', 'success', 'Fill chunk marked (' + this.fillDone + ' of ' + this.fillUnits.length + ' rows).');
+    this.persistPhase();
+  }
+
   private async advance(signal: AbortSignal, generation: number, execution?: BatchExecution): Promise<void> {
     try {
       await this.loadSkills();
@@ -497,6 +562,8 @@ export class TaskController {
       if (!await this.ensureSource(signal, generation)) return;
       if (!this.current(generation, signal)) return;
       if (!await this.ensureExtract(signal, generation)) return;
+      if (!this.current(generation, signal)) return;
+      if (!await this.ensureFillPlan(signal, generation)) return;
       if (!this.current(generation, signal)) return;
       let failedActionId: string | null = null;
       let executionError: string | null = null;
@@ -615,6 +682,7 @@ export class TaskController {
           this.noProgressStreak = 0;
           this.stallCycles = 0;
           this.lastGuidance = null;
+          this.markFillChunk(execution.actions);
           // A bare look-around must not mask a shell check-loop: only a real
           // click, type, or keypress resets the identical-output streak.
           if (probe.type !== 'screenshot' && probe.type !== 'wait') this.shellRepeatStreak = 0;
@@ -690,6 +758,15 @@ export class TaskController {
     const appProfile = matchAppProfile(this.lastWindowTitle);
     if (appProfile) history.push('App notes (' + appProfile.id + '): ' + appProfile.notes);
     if (this.extracted) history.push('Source bill fields: ' + formatExtracted(this.extracted));
+    if (this.fillUnits.length) {
+      history.push('Fill plan: ' + this.fillUnits.length + ' rows'
+        + (this.fillStartHint ? ' (' + this.fillStartHint.slice(0, 120) + ')' : '') + ', ' + this.fillDone + ' done.');
+      const chunk = this.fillUnits.slice(this.fillDone, this.fillDone + this.fillChunk);
+      if (chunk.length) {
+        history.push('Next chunk - type exactly, Tab between every cell (Tab wraps rows inside a selected range): '
+          + chunk.map(cells => cells.join('\t')).join('\t').slice(0, 1500));
+      }
+    }
     if (progressNote) history.push(progressNote);
     if (this.unmetNote) {
       history.push(this.unmetNote);
@@ -1142,6 +1219,7 @@ export class TaskController {
     this.shellRepeatStreak = 0;
     this.shellRepeatNote = null;
     this.clarifications = [...resumed.clarifications];
+    this.restoredFillDone = resumed.fillDone ?? 0;
     this.resumedHistory = [...resumed.executedDescs,
       ...(resumed.lastVerification ? ['Last step result: ' + resumed.lastVerification] : [])];
     this.state = {
@@ -1435,6 +1513,7 @@ export class TaskController {
         lastVerification: this.state.actions.at(-1)?.verification?.summary ?? this.resumedHistory.at(-1) ?? null,
         inputTokens: this.state.inputTokens, outputTokens: this.state.outputTokens,
         noProgressStreak: this.noProgressStreak, stallCycles: this.stallCycles, savedAt: Date.now(),
+        ...(this.fillUnits.length ? { fillDone: this.fillDone, fillTotal: this.fillUnits.length } : {}),
       };
       void store.save(checkpoint).catch(() => undefined);
     } catch {

@@ -318,6 +318,21 @@ describe('Meta computer-use adapter', () => {
     expect(result.items).toHaveLength(1);
   });
 
+  it('lists fill units once with the goal, summary, and data in context', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      status: 'completed', usage: { input_tokens: 60, output_tokens: 25 },
+      output: [{ type: 'message', content: [{ type: 'output_text',
+        text: '{"units":[{"cells":["Lamp","12","450"]}],"chunkRows":5,"startHint":"first empty row"}' }] }],
+    })));
+    const model = new MetaComputerModel({ apiKey: 'test-key', model: 'muse-spark-1.3' }, request);
+    const result = await model.fillPlan({ goal: 'Enter rows', summary: 'Calc entry', data: 'Lamp 12 450', signal: new AbortController().signal });
+    const body = String(request.mock.calls[0]![1]?.body);
+    expect(body).toContain('Enter rows');
+    expect(body).toContain('Lamp 12 450');
+    expect(result.units).toEqual([{ cells: ['Lamp', '12', '450'] }]);
+    expect(result).toMatchObject({ chunkRows: 5, startHint: 'first empty row', inputTokens: 60, outputTokens: 25 });
+  });
+
   it('plans ordered domain phases without tools or screenshots', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       status: 'completed', usage: { input_tokens: 45, output_tokens: 18 },

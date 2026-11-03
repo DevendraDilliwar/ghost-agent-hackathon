@@ -177,6 +177,12 @@ function validCheckpoint(value: unknown, missionId: string, phaseId: string): Ph
     completedSteps.some(index => typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0 || index >= steps.length)) return null;
   const activeStep = data.activeStep === undefined ? null : data.activeStep;
   if (activeStep !== null && (typeof activeStep !== 'number' || !Number.isSafeInteger(activeStep) || activeStep < 0 || activeStep >= steps.length)) return null;
+  // Fill-queue marks: absent in checkpoints written before fill tracking; garbage resets to none.
+  const fillDone = data.fillDone;
+  const fillTotal = data.fillTotal;
+  const fillMarks = typeof fillDone === 'number' && Number.isSafeInteger(fillDone) && fillDone >= 0
+    && typeof fillTotal === 'number' && Number.isSafeInteger(fillTotal) && fillTotal >= fillDone && fillTotal <= 200
+    ? { fillDone, fillTotal } : {};
   return {
     missionId, phaseId, order: data.order, domain: data.domain as DomainId, status: data.status as PhaseStatus,
     goal: data.goal, notes, steps, success: data.success, intent, clarifications, executedDescs,
@@ -184,6 +190,7 @@ function validCheckpoint(value: unknown, missionId: string, phaseId: string): Ph
     inputTokens: data.inputTokens as number, outputTokens: data.outputTokens as number,
     noProgressStreak: data.noProgressStreak as number, stallCycles,
     completedSteps: [...completedSteps] as number[], activeStep: activeStep as number | null,
+    ...fillMarks,
     savedAt: data.savedAt as number,
   };
 }

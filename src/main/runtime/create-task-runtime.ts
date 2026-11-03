@@ -152,6 +152,7 @@ export function createTaskRuntime(window: BrowserWindow, controls: BrowserWindow
       verifyText: input => new MetaComputerModel({ apiKey: connection.getKey(), model, verifyModel }).verifyText(input),
       readSource: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).readSource(input),
       extractFields: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).extractFields(input),
+      fillPlan: input => new MetaComputerModel({ apiKey: connection.getKey(), model }).fillPlan(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,

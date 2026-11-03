@@ -6,7 +6,7 @@ import { createTaskRuntime } from './create-task-runtime';
 
 const stubs = vi.hoisted(() => ({
   preflight: vi.fn(), capture: vi.fn(), execute: vi.fn(), decide: vi.fn(), parseIntent: vi.fn(), plan: vi.fn(), verifySuccess: vi.fn(), verifyText: vi.fn(),
-  probe: vi.fn(), modelOptions: vi.fn(), register: vi.fn(), unregister: vi.fn(), isRegistered: vi.fn(), readSource: vi.fn(), extractFields: vi.fn(),
+  probe: vi.fn(), modelOptions: vi.fn(), register: vi.fn(), unregister: vi.fn(), isRegistered: vi.fn(), readSource: vi.fn(), extractFields: vi.fn(), fillPlan: vi.fn(),
   saveKey: vi.fn(), loadKey: vi.fn(), clearKey: vi.fn(), hasKey: vi.fn(),
 }));
 vi.mock('electron', () => ({ globalShortcut: { register: stubs.register, unregister: stubs.unregister, isRegistered: stubs.isRegistered } }));
@@ -27,6 +27,7 @@ vi.mock('../../providers/meta/meta-computer-model', () => ({ MetaComputerModel: 
   verifyText = stubs.verifyText;
   readSource = stubs.readSource;
   extractFields = stubs.extractFields;
+  fillPlan = stubs.fillPlan;
 } }));
 
 const runtimes: ReturnType<typeof createTaskRuntime>[] = [];
@@ -59,6 +60,7 @@ beforeEach(() => {
   stubs.verifyText.mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 1, outputTokens: 1 });
   stubs.readSource.mockResolvedValue({ text: 'BILL-1 Total 100', lowConfidence: false, inputTokens: 1, outputTokens: 1 });
   stubs.extractFields.mockResolvedValue({ billNo: 'B-1', date: '12-Oct', total: '300', items: [], missing: [], inputTokens: 1, outputTokens: 1 });
+  stubs.fillPlan.mockResolvedValue({ units: [], chunkRows: 5, startHint: '', inputTokens: 1, outputTokens: 1 });
 });
 
 describe('emergency Stop registration and task readiness', () => {

@@ -87,6 +87,18 @@ export interface ExtractDecision {
   readonly outputTokens: number;
 }
 
+/** Ordered fill list for row-by-row entry tasks. Empty units = not an entry task. */
+export interface FillPlanDecision {
+  /** One unit per row, cells left-to-right. At most 200 units, 10 cells each. */
+  readonly units: ReadonlyArray<{ readonly cells: ReadonlyArray<string> }>;
+  /** Rows to type per round (1-10). */
+  readonly chunkRows: number;
+  /** Where typing should begin (e.g. "first empty row"). May be empty. */
+  readonly startHint: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 /** Local text recognition. Rejects when OCR is unavailable. */
 export interface OcrPort {
   readText(image: string, signal: AbortSignal): Promise<string>;
@@ -157,6 +169,14 @@ export interface ModelPort {
     transcript: string;
     signal: AbortSignal;
   }): Promise<ExtractDecision>;
+  fillPlan(input: {
+    goal: string;
+    /** Intent summary; empty when intent is missing. */
+    summary: string;
+    /** Extracted data one-liner for photo runs; empty for prompt-data runs. */
+    data: string;
+    signal: AbortSignal;
+  }): Promise<FillPlanDecision>;
   verifyText(input: {
     text: string;
     observation: ScreenObservation;

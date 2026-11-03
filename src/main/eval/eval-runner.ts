@@ -101,6 +101,7 @@ async function runEvalTask(task: EvalTask, ctx: EvalContext): Promise<EvalResult
       verifyText: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model, verifyModel: ctx.verifyModel }).verifyText(input),
       readSource: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).readSource(input),
       extractFields: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).extractFields(input),
+      fillPlan: input => new MetaComputerModel({ apiKey: ctx.apiKey, model: ctx.model }).fillPlan(input),
     },
     id: randomUUID,
     describe: describeCommand, validateAction: validateDesktopCommand, validateShell: validateShellCommand,

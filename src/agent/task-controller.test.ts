@@ -46,7 +46,8 @@ function setup(overrides?: Partial<import('./task-controller').ControllerDepende
     verifySuccess: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Success visible.', inputTokens: 5, outputTokens: 2 }),
     verifyText: vi.fn().mockResolvedValue({ confirmed: true, detail: 'Visible.', inputTokens: 5, outputTokens: 2 }),
     readSource: vi.fn().mockResolvedValue({ text: 'BILL-1 Total 100', lowConfidence: false, inputTokens: 1, outputTokens: 1 }),
-    extractFields: vi.fn().mockResolvedValue({ billNo: 'B-1', date: '12-Oct', total: '300', items: [], missing: [], inputTokens: 1, outputTokens: 1 }) };
+    extractFields: vi.fn().mockResolvedValue({ billNo: 'B-1', date: '12-Oct', total: '300', items: [], missing: [], inputTokens: 1, outputTokens: 1 }),
+    fillPlan: vi.fn().mockResolvedValue({ units: [], chunkRows: 5, startHint: '', inputTokens: 1, outputTokens: 1 }) };
   const changed = vi.fn();
   const clock = { now: 1000 };
   const controller = new TaskController({
@@ -1158,6 +1159,42 @@ describe('task lifecycle', () => {
     expect(model.parseIntent.mock.calls[0]?.[0].attachments).toEqual(['bill.png']);
     expect(model.plan.mock.calls[0]?.[0].attachments).toEqual(['bill.png']);
     expect(controller.getSnapshot().messages.map(message => message.content).join('\n')).toContain('📎 Attached bill.png');
+  });
+
+  it('builds a fill queue for multi-line entry goals and shows the next chunk', async () => {
+    const { controller, model } = setup();
+    model.fillPlan.mockResolvedValue({ units: [{ cells: ['a', '1'] }, { cells: ['b', '2'] }, { cells: ['c', '3'] }],
+      chunkRows: 2, startHint: 'first empty row', inputTokens: 1, outputTokens: 1 });
+    controller.start({ ...configuration, approvalMode: 'full_access',
+      goal: 'Enter these rows in Calc:\na 1\nb 2\nc 3' });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.fillPlan).toHaveBeenCalledTimes(1);
+    const history = model.decide.mock.calls[0]?.[0].history.join('\n') ?? '';
+    expect(history).toContain('Fill plan: 3 rows (first empty row), 0 done.');
+    expect(history).toContain('Next chunk');
+    expect(history).toContain('a\t1\tb\t2');
+  });
+
+  it('skips fill planning for single-line goals without a photo', async () => {
+    const { controller, model } = setup();
+    controller.start({ ...configuration, approvalMode: 'full_access' });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalled());
+    expect(model.fillPlan).not.toHaveBeenCalled();
+  });
+
+  it('marks chunk rows done after a verified bulk type', async () => {
+    const { controller, model, desktop } = setup();
+    model.fillPlan.mockResolvedValue({ units: [{ cells: ['a', '1'] }, { cells: ['b', '2'] }, { cells: ['c', '3'] }, { cells: ['d', '4'] }],
+      chunkRows: 2, startHint: '', inputTokens: 1, outputTokens: 1 });
+    const changed = { ...frame, image: 'data:image/png;base64,ZGlmZmVyZW50LWZyYW1l' };
+    desktop.capture.mockResolvedValueOnce(frame).mockResolvedValue(changed);
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'a\t1\tb\t2' } }).mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10,
+      goal: 'Enter these rows in Calc:\na 1\nb 2\nc 3\nd 4' });
+    await vi.waitFor(() => expect(model.decide).toHaveBeenCalledTimes(2));
+    const history = model.decide.mock.calls[1]?.[0].history.join('\n') ?? '';
+    expect(history).toContain('Fill plan: 4 rows, 2 done.');
+    expect(history).toContain('c\t3\td\t4');
   });
 
   it('moves the checklist pointer from a bracketed step tag', async () => {

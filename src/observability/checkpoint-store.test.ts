@@ -28,6 +28,16 @@ describe('CheckpointStore', () => {
     expect((await store.list('m-1')).map(item => item.phaseId)).toEqual(['phase-1', 'phase-2']);
   });
 
+  it('round-trips fill-queue marks and drops garbage marks to none', async () => {
+    const store = new CheckpointStore(await mkdtemp(join(tmpdir(), 'nomcp-missions-')));
+    await store.save(checkpoint({ fillDone: 5, fillTotal: 25 }));
+    expect(await store.load('m-1', 'phase-1')).toMatchObject({ fillDone: 5, fillTotal: 25 });
+    await store.save(checkpoint({ fillDone: 30, fillTotal: 25 }));
+    expect(await store.load('m-1', 'phase-1')).not.toHaveProperty('fillDone');
+    await store.save(checkpoint({}));
+    expect(await store.load('m-1', 'phase-1')).not.toHaveProperty('fillTotal');
+  });
+
   it('returns null for missing, corrupt or mismatched checkpoints', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'nomcp-missions-'));
     const store = new CheckpointStore(directory);
