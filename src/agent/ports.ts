@@ -97,6 +97,8 @@ export interface ExtractDecision {
 
 /** Ordered fill list for row-by-row entry tasks. Empty units = not an entry task. */
 export interface FillPlanDecision {
+  /** Optional headers row. */
+  readonly headers?: ReadonlyArray<string>;
   /** One unit per row, cells left-to-right. At most 200 units, 10 cells each. */
   readonly units: ReadonlyArray<{ readonly cells: ReadonlyArray<string> }>;
   /** Rows to type per round (1-10). */
@@ -105,6 +107,17 @@ export interface FillPlanDecision {
   readonly startHint: string;
   readonly inputTokens: number;
   readonly outputTokens: number;
+}
+
+/**
+ * Typed text matches when words match: grid Tab separators in bulk chunks
+ * and the model's own spacing of read-back text must not fail verification
+ * by themselves. Real typos (different words) still fail.
+ */
+export function sameTypedText(observed: string | null, expected: string): boolean {
+  if (observed === null) return false;
+  const squash = (value: string): string => value.trim().replace(/\s+/g, ' ');
+  return squash(observed) === squash(expected);
 }
 
 /** Local text recognition. Rejects when OCR is unavailable. */
@@ -165,6 +178,9 @@ export interface ModelPort {
     goal: string;
     /** Replan context: failures and remaining work. Absent for the first plan. */
     context?: string;
+    /** Resolved intent parameters (e.g. component, file_name, columns, row_count). */
+    params?: Record<string, string>;
+    clarifications?: string[];
     /** Attached image names (never the bytes). Omit when the run has no attachments. */
     attachments?: string[];
     signal: AbortSignal;
@@ -181,6 +197,9 @@ export interface ModelPort {
     goal: string;
     /** Intent summary; empty when intent is missing. */
     summary: string;
+    /** Resolved intent parameters (e.g. columns, row_count, file_name). */
+    params?: Record<string, string>;
+    clarifications?: string[];
     /** Extracted data one-liner for photo runs; empty for prompt-data runs. */
     data: string;
     signal: AbortSignal;

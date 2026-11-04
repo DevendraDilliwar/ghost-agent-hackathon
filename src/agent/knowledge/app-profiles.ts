@@ -29,7 +29,7 @@ const TALLY_NOTES = [
 const CALC_NOTES = [
   'LibreOffice Calc grid: arrows move, Tab goes right, Enter goes down, Home jumps to column A.',
   'Save with Ctrl+S; the filename field may be prefilled — Ctrl+A first, then type. If a save may already have worked, verify with run_shell (ls the folder) instead of saving again.',
-  'Bulk entry: NEVER click cells or the Name Box. Ctrl+End, Down, Home lands on the first empty A-cell. Select rows once with Shift+Down (+Shift+Right for columns), then type the Next chunk, one chunk per type action, Tab between every cell.',
+  'Bulk entry: Ctrl+End, Down, Home lands on the first empty A-cell, or click the cell / Name Box. Enter the Next chunk, one chunk per type action, Tab between every cell.',
   'Wrong file open? Ctrl+N first, then work.',
 ].join(' ');
 

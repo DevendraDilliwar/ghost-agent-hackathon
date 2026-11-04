@@ -1,5 +1,6 @@
 import type { AgentAction, ApprovalMode, RunAttachmentInput, RunConfiguration, TaskSnapshot, UserHandoff } from '../shared/contracts/task';
 import type { CheckpointPort, DesktopPort, ExtractDecision, MemoryStorePort, ModelDecision, ModelPort, OcrPort, PlanDecision, ShellPort, SkillStorePort, SourceStorePort, TypedVerifyDecision, VerifyDecision } from './ports';
+import { sameTypedText } from './ports';
 import type { MissionPlan, PhaseCheckpoint, PhaseRecord } from '../shared/contracts/mission';
 import { MissionMemory } from './memory/mission-memory';
 import { SkillMemory } from './memory/skill-memory';
@@ -126,17 +127,6 @@ function formatExtracted(fields: ExtractDecision): string {
  */
 const AUTO_PROCEED_CONFIRMATIONS = ['computer_action_requires_confirmation'];
 
-/**
- * Typed text matches when words match: grid Tab separators in bulk chunks
- * and the model's own spacing of read-back text must not fail verification
- * by themselves. Real typos (different words) still fail.
- */
-function sameTypedText(observed: string | null, expected: string): boolean {
-  if (observed === null) return false;
-  const squash = (value: string): string => value.trim().replace(/\s+/g, ' ');
-  return squash(observed) === squash(expected);
-}
-
 export class TaskController {
   private state = idleSnapshot();
   private operation: AbortController | null = null;
@@ -163,6 +153,10 @@ export class TaskController {
   private extractAsked = false;
   /** Fill queue: ordered row units built once per run; empty when the task is not bulk entry. */
   private fillUnits: string[][] = [];
+  private fillHeaders: string[] = [];
+  private fillHeadersDone = false;
+  private currentCellIndex = 0;
+  private entryPhaseShellCount = 0;
   private fillDone = 0;
   private fillChunk = 5;
   private fillStartHint = '';
@@ -234,6 +228,10 @@ export class TaskController {
     this.extracted = null;
     this.extractAsked = false;
     this.fillUnits = [];
+    this.fillHeaders = [];
+    this.fillHeadersDone = false;
+    this.currentCellIndex = 0;
+    this.entryPhaseShellCount = 0;
     this.fillDone = 0;
     this.fillChunk = 5;
     this.fillStartHint = '';
@@ -399,8 +397,11 @@ export class TaskController {
     const controller = new AbortController();
     this.operation = controller;
     const generation = this.generation;
-    void this.advance(controller.signal, generation, execution).catch(() => {
-      if (this.current(generation, controller.signal)) this.fail('The task could not continue.');
+    void this.advance(controller.signal, generation, execution).catch((error: unknown) => {
+      if (this.current(generation, controller.signal)) {
+        const message = error instanceof Error ? error.message : 'The task could not continue.';
+        this.fail(message);
+      }
     });
   }
 
@@ -520,8 +521,12 @@ export class TaskController {
   private async ensureFillPlan(signal: AbortSignal, generation: number): Promise<boolean> {
     if (this.fillPlanned) return true;
     const queue = await this.dependencies.model.fillPlan({
-      goal: this.state.goal, summary: this.state.intent?.summary ?? '',
-      data: this.extracted ? formatExtracted(this.extracted) : '', signal,
+      goal: this.state.goal,
+      summary: this.state.intent?.summary ?? '',
+      ...(this.state.intent?.params ? { params: this.state.intent.params } : {}),
+      ...(this.clarifications.length ? { clarifications: [...this.clarifications] } : {}),
+      data: this.extracted ? formatExtracted(this.extracted) : '',
+      signal,
     });
     if (!this.current(generation, signal)) return false;
     const inputTokens = this.state.inputTokens + queue.inputTokens;
@@ -534,11 +539,17 @@ export class TaskController {
     }
     this.fillPlanned = true;
     this.fillUnits = queue.units.map(unit => [...unit.cells]);
+    if (queue.headers?.length) {
+      this.fillHeaders = [...queue.headers];
+    } else if (this.state.intent?.params?.columns) {
+      this.fillHeaders = this.state.intent.params.columns.split(',').map(s => s.trim()).filter(Boolean);
+    }
     this.fillChunk = queue.chunkRows;
     this.fillStartHint = queue.startHint;
     this.fillDone = Math.min(this.restoredFillDone, this.fillUnits.length);
     if (this.fillUnits.length) {
       this.record('verify', 'success', 'Fill plan ready (' + this.fillUnits.length + ' rows'
+        + (this.fillHeaders.length ? ', ' + this.fillHeaders.length + ' headers' : '')
         + (this.fillDone ? ', resuming at row ' + (this.fillDone + 1) : '') + ').');
     }
     return true;
@@ -550,6 +561,17 @@ export class TaskController {
     for (let count = 1; count <= rows.length; count++) {
       const prefix = rows.slice(0, count);
       if (prefix.flat().join('\t') === text) return prefix;
+    }
+    const currentRow = rows[0];
+    if (currentRow) {
+      const cellIdx = this.currentCellIndex ?? 0;
+      if (currentRow[cellIdx] === text || currentRow[0] === text) {
+        return [[text]];
+      }
+    }
+    if (this.fillHeaders?.length && !this.fillHeadersDone) {
+      if (this.fillHeaders.join('\t') === text) return [this.fillHeaders];
+      if (this.fillHeaders[0] === text) return [[text]];
     }
     return [];
   }
@@ -652,7 +674,25 @@ export class TaskController {
               execution.observation.activeWindowId === observation.activeWindowId &&
               Number.isSafeInteger(check.verifiedRows) && check.verifiedRows >= 0 && check.verifiedRows <= expectedRows.length) {
             progressed = true;
-            verifiedFillRows = check.verifiedRows === expectedRows.length ? check.verifiedRows : 0;
+            this.entryPhaseShellCount = 0;
+            if (this.fillHeaders?.length && !this.fillHeadersDone && sameTypedText(text, this.fillHeaders.join('\t'))) {
+              this.fillHeadersDone = true;
+              this.record('verify', 'success', 'Header row confirmed.');
+            } else if (expectedRows.length > 0 && check.verifiedRows === expectedRows.length) {
+              verifiedFillRows = check.verifiedRows;
+              this.currentCellIndex = 0;
+            } else {
+              const rows = this.fillUnits.slice(this.fillDone, this.fillDone + this.fillChunk);
+              const currentRow = rows[0];
+              const cellIdx = this.currentCellIndex ?? 0;
+              if (currentRow && (text === currentRow[cellIdx] || (cellIdx === 0 && text === currentRow[0]))) {
+                this.currentCellIndex = cellIdx + 1;
+                if (this.currentCellIndex >= currentRow.length) {
+                  this.currentCellIndex = 0;
+                  verifiedFillRows = 1;
+                }
+              }
+            }
             verification = { ...delta, status: 'verified_success', summary: 'PRISM: typed value confirmed by readback.', verifiedAt: Date.now() };
           } else {
             progressed = false;
@@ -788,6 +828,9 @@ export class TaskController {
     const appProfile = matchAppProfile(this.lastWindowTitle);
     if (appProfile) history.push('App notes (' + appProfile.id + '): ' + appProfile.notes);
     if (this.extracted) history.push('Source bill fields: ' + formatExtracted(this.extracted));
+    if (this.fillHeaders?.length && !this.fillHeadersDone) {
+      history.push('Header row to enter: ' + this.fillHeaders.join('\t'));
+    }
     if (this.fillUnits.length) {
       history.push('Fill plan: ' + this.fillUnits.length + ' rows'
         + (this.fillStartHint ? ' (' + this.fillStartHint.slice(0, 120) + ')' : '') + ', ' + this.fillDone + ' done.');
@@ -997,8 +1040,11 @@ export class TaskController {
     const controller = new AbortController();
     this.operation = controller;
     const generation = this.generation;
-    void this.approvedShellTurn(controller.signal, generation, command, actionId).catch(() => {
-      if (this.current(generation, controller.signal)) this.fail('The task could not continue.');
+    void this.approvedShellTurn(controller.signal, generation, command, actionId).catch((error: unknown) => {
+      if (this.current(generation, controller.signal)) {
+        const message = error instanceof Error ? error.message : 'The task could not continue.';
+        this.fail(message);
+      }
     });
   }
 
@@ -1050,10 +1096,13 @@ export class TaskController {
     // Fresh output counts as progress; failures and byte-identical repeats
     // must not forgive the stall cap, or loop walls would never accumulate.
     const signature = result.exitCode + '\n' + output;
+    const isEntryPending = this.fillUnits.length > 0 && this.fillDone < this.fillUnits.length;
     if (!failed && signature !== this.lastShellOutput) {
-      this.noProgressStreak = 0;
-      this.stallCycles = 0;
-      this.lastGuidance = null;
+      if (!isEntryPending) {
+        this.noProgressStreak = 0;
+        this.stallCycles = 0;
+        this.lastGuidance = null;
+      }
     }
     this.record('verify', failed ? 'failure' : 'success',
       'Shell: exit ' + result.exitCode + ' (' + output.length + ' output chars).', { stepId: id, durationMs: shellMs });
@@ -1061,6 +1110,19 @@ export class TaskController {
     if (!failed) {
       this.shellFailures = 0;
       this.phaseShellCommands.push(command);
+      if (isEntryPending) {
+        this.entryPhaseShellCount = (this.entryPhaseShellCount ?? 0) + 1;
+        if (this.entryPhaseShellCount >= 3) {
+          this.entryPhaseShellCount = 0;
+          const shellStallReason = 'Running multiple diagnostic terminal commands during data entry without spreadsheet progress. Switch to the target application and type the pending data rows.';
+          if (this.cappedStall(shellStallReason)) return;
+          this.record('stall', 'stalled', shellStallReason.slice(0, 200));
+          this.learnFromHandoff(shellStallReason);
+          this.yieldToUser({ kind: 'manual', reason: shellStallReason });
+          if (this.approvalMode === 'full_access') this.autoResumeFromStall(shellStallReason);
+          return;
+        }
+      }
       // Same bytes back means the world did not change: the model is
       // re-checking instead of acting (the T5 mkdir/screenshot ping-pong).
       if (signature === this.lastShellOutput) this.shellRepeatStreak += 1;
@@ -1164,8 +1226,13 @@ export class TaskController {
     if (mission.getPlan().phases.length) return true;
     this.update({ status: 'preparing', message: 'Splitting your goal into phases.' });
     const attached = this.attachmentNames();
-    const decision = await this.dependencies.model.plan({ goal: this.state.goal,
-      ...(attached.length ? { attachments: attached } : {}), signal });
+    const decision = await this.dependencies.model.plan({
+      goal: this.state.goal,
+      ...(this.state.intent?.params ? { params: this.state.intent.params } : {}),
+      ...(this.clarifications.length ? { clarifications: [...this.clarifications] } : {}),
+      ...(attached.length ? { attachments: attached } : {}),
+      signal,
+    });
     if (!this.current(generation, signal)) return false;
     const inputTokens = this.state.inputTokens + decision.inputTokens;
     const outputTokens = this.state.outputTokens + decision.outputTokens;
@@ -1377,6 +1444,9 @@ export class TaskController {
         // A bad audit must never break verification.
       }
     }
+    if (check.confirmed && this.fillUnits.length > 0 && this.fillDone < this.fillUnits.length) {
+      check = { ...check, confirmed: false, detail: 'Data entry incomplete (' + this.fillDone + ' of ' + this.fillUnits.length + ' rows entered).' };
+    }
     if (check.confirmed) {
       this.unmetStreak = 0;
       this.stallCycles = 0;
@@ -1433,8 +1503,14 @@ export class TaskController {
     let decision: PlanDecision;
     try {
       const attached = this.attachmentNames();
-      decision = await this.dependencies.model.plan({ goal: this.state.goal, context,
-        ...(attached.length ? { attachments: attached } : {}), signal });
+      decision = await this.dependencies.model.plan({
+        goal: this.state.goal,
+        context,
+        ...(this.state.intent?.params ? { params: this.state.intent.params } : {}),
+        ...(this.clarifications.length ? { clarifications: [...this.clarifications] } : {}),
+        ...(attached.length ? { attachments: attached } : {}),
+        signal,
+      });
     } catch {
       return false;
     }

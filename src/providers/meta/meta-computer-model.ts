@@ -1,4 +1,4 @@
-import type { ModelPort } from '../../agent/ports';
+import { type ModelPort, sameTypedText } from '../../agent/ports';
 import { malformed, parseMetaDecision } from './parse-response';
 import { parseIntentResponse } from './parse-intent';
 import { parsePlanResponse } from './parse-plan';
@@ -172,11 +172,17 @@ export class MetaComputerModel implements ModelPort {
     const attachedText = input.attachments?.length
       ? '\nAttached images (already available, never plan to locate them): ' + input.attachments.slice(0, 3).join(', ').slice(0, 400)
       : '';
+    const paramText = input.params && Object.keys(input.params).length
+      ? '\nResolved intent parameters: ' + Object.entries(input.params).map(([k, v]) => `${k}=${v}`).join(', ')
+      : '';
+    const clarifText = input.clarifications?.length
+      ? '\nClarifications:\n- ' + input.clarifications.join('\n- ')
+      : '';
     const response = await requestMeta(this.config, {
       // Same allowance as decisions: multi-phase goals need room for reasoning plus the JSON.
       max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: planInstructions,
       input: [{ role: 'user', content: [
-        { type: 'input_text', text: 'Goal: ' + input.goal +
+        { type: 'input_text', text: 'Goal: ' + input.goal + paramText + clarifText +
           (input.context ? '\nReplan context (plan ONLY the remaining work): ' + input.context.slice(0, 2000) : '') +
           attachedText + '\nReturn only the JSON object.' },
       ] }],
@@ -224,10 +230,16 @@ export class MetaComputerModel implements ModelPort {
   }
 
   async fillPlan(input: Parameters<ModelPort['fillPlan']>[0]) {
+    const paramText = input.params && Object.keys(input.params).length
+      ? '\nResolved intent parameters: ' + Object.entries(input.params).map(([k, v]) => `${k}=${v}`).join(', ')
+      : '';
+    const clarifText = input.clarifications?.length
+      ? '\nClarifications:\n- ' + input.clarifications.join('\n- ')
+      : '';
     const response = await requestMeta(this.config, {
       max_output_tokens: 4096, reasoning: { effort: 'low' }, instructions: fillPlanInstructions,
       input: [{ role: 'user', content: [
-        { type: 'input_text', text: 'Goal: ' + input.goal + '\nIntent: ' + input.summary +
+        { type: 'input_text', text: 'Goal: ' + input.goal + '\nIntent: ' + input.summary + paramText + clarifText +
           (input.data ? '\nData:\n' + input.data.slice(0, 4000) : '') + '\nReturn only the JSON object.' },
       ] }],
     }, input.signal, this.request);
@@ -247,7 +259,7 @@ export class MetaComputerModel implements ModelPort {
       ] }],
     }, input.signal, this.request);
     const result = parseVerifyResponse(response, true);
-    return { ...result, confirmed: result.confirmed && result.destinationConfirmed && result.observedText === input.text &&
+    return { ...result, confirmed: result.confirmed && result.destinationConfirmed && sameTypedText(result.observedText, input.text) &&
       input.before.activeWindowId === input.observation.activeWindowId && result.verifiedRows <= input.expectedRows.length };
   }
 }

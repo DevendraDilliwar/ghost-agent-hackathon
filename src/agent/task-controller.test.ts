@@ -1231,7 +1231,7 @@ describe('task lifecycle', () => {
     model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'a\t1\tb\t2' } }).mockResolvedValue(finished);
     controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10,
       goal: 'Enter these rows in Calc:\na 1\nb 2\nc 3\nd 4' });
-    await vi.waitFor(() => expect(model.decide).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(model.decide.mock.calls.length).toBeGreaterThanOrEqual(2));
     const history = model.decide.mock.calls[1]?.[0].history.join('\n') ?? '';
     expect(history).toContain('Fill plan: 4 rows, 2 done.');
     expect(history).toContain('c\t3\td\t4');

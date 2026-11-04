@@ -33,7 +33,17 @@ export function parseFillPlanResponse(value: unknown): FillPlanDecision {
   catch { throw new Error('Meta did not return the fill plan as JSON' + FAILURE + ' Try again.'); }
   const plan = record(parsed);
   for (const key of Object.keys(plan)) {
-    if (!['units', 'chunkRows', 'startHint'].includes(key)) throw new Error('Meta returned an unsupported fill-plan field' + FAILURE);
+    if (!['headers', 'units', 'chunkRows', 'startHint'].includes(key)) throw new Error('Meta returned an unsupported fill-plan field' + FAILURE);
+  }
+  let headers: string[] | undefined;
+  if (plan.headers !== undefined) {
+    if (!Array.isArray(plan.headers) || plan.headers.length > 20) {
+      throw new Error('Meta returned an invalid fill-plan header list' + FAILURE);
+    }
+    headers = plan.headers.map(header => {
+      if (typeof header !== 'string' || header.length > 200) throw new Error('Meta returned an invalid fill-plan header' + FAILURE);
+      return header.trim();
+    }).filter(Boolean);
   }
   if (!Array.isArray(plan.units) || plan.units.length > 200) {
     throw new Error('Meta returned an invalid fill-unit list' + FAILURE);
@@ -58,5 +68,5 @@ export function parseFillPlanResponse(value: unknown): FillPlanDecision {
     ? Math.min(10, Math.max(1, chunkRaw)) : 5;
   const hintRaw = plan.startHint;
   const startHint = typeof hintRaw === 'string' ? hintRaw.trim().slice(0, 200) : '';
-  return { units, chunkRows, startHint, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
+  return { ...(headers ? { headers } : {}), units, chunkRows, startHint, inputTokens: tokens(usage.input_tokens), outputTokens: tokens(usage.output_tokens) };
 }

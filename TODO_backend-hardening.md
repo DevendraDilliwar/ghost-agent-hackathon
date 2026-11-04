@@ -1,5 +1,7 @@
 # Ghost Agent backend and privileged-runtime hardening
 
+- [x] **STATUS-3.1 — Latest case audit.** The [sales spreadsheet investigation](#sales-spreadsheet-failure-audit--2026-11-04) checks the actual failed run and current commit 4d4c8a0. Six remaining workflow gaps are recorded with source probes and a bounded acceptance plan. Earlier sections describe their own historical snapshots.
+
 - [x] **STATUS-2.1 — Latest research available.** The [research follow-up](#research-follow-up--2026-11-03) records seven additional open findings, the recommended order of fixes, primary sources, and reproducible probes. Only this TODO changed during that follow-up; the new fixes are not implemented.
 
 Implementation update, 2026-11-03: the user subsequently authorized source fixes. All thirteen source remediations below are applied, and `npm run check` passes with **579 tests across 51 files**, TypeScript, lint, build, and preload validation. Native desktop/keyring acceptance and an actual clean Node 24 CI run remain open under Operations. Finding evidence/line references describe the pre-fix audited working tree, not the current patched source. Checked FINDING/FIX/CODE items mean the source remedy is applied and automated regressions pass; they do not close the separately listed live acceptance tasks.
@@ -982,3 +984,180 @@ GHOST_ENABLE_HOST_SHELL=0 GHOST_ENABLE_ACCESSIBILITY=0 GHOST_RETAIN_TASK_CONTENT
 - [x] **QA-2.6 — Research-only change.** This pass appends the research/proposals to this file. It does not apply any FIX-2 source patch or create additional audit artifacts.
 - [ ] **QA-2.7 — Deployment and recovery acceptance.** Native package/rollback, actual CI, permitted cloud processing, and real closed-profile/keyring restore remain external acceptance items. Server zero-downtime deployment remains N/A.
 
+## Sales Spreadsheet Failure Audit — 2026-11-04
+
+### Context
+
+- [x] **CASE-3.1 — Current source snapshot.** Audited src/agent and the actual connected provider/desktop boundaries at commit 4d4c8a0. The working tree was clean at the start of this case investigation. Newer commits have incorporated and changed parts of the earlier work; the historical FIX-1/FIX-2 checklists do not certify this revision. This case is an analysis requested by the user, not a new implementation or native replay.
+- [x] **CASE-3.2 — Matching saved incident.** Read the local history, checkpoint, and journal for run 63b68cfd-4ca7-4b36-ad51-66892397dae5, ending 2026-11-03 at 22:27:46 IST. Its goal is the user's request to open LibreOffice, create sales, and enter ten mock rows. Clarifications were received correctly: Calc, sales.ods, and Date / Product / Quantity / Price. The generated phase instead specified seven columns, including Order ID, Customer, and Total. The fill queue had 11 units and zero confirmed units at the final checkpoint. One four-action GUI batch was followed by three shell inspection commands interspersed with observations. The task ended failed, with the generic message “The task could not continue.” This establishes the observed sequence, not the exact final thrown exception.
+- [x] **CASE-3.3 — Historical/native limits.** That saved run predates the latest commits and contains the old image-change shortcut (“paid re-check skipped”), which is absent from current source and the current built bundle. Typed payloads/screenshots are not available in that history, so the user's report that only headers appeared cannot be independently reconstructed cell by cell. Do not claim the new code generated that old trace or that an unseen exception was definitely caused by verification. A separate saleskon attempt failed with a timeout before any action; that is a different failure.
+- [x] **CASE-3.4 — Current-code reproduction.** In-memory source probes reproduced missing clarification context in planning, provider/controller readback disagreement, row-progress limitations, and premature completion review with zero filled rows. No provider request, desktop input, process cleanup, or user-data mutation occurred. Node typecheck and 252 focused tests in 11 files pass; these tests do not establish native success for this sales task.
+
+### Audit Findings
+
+- [ ] **FINDING-3.1 [High] [Clarification-to-plan contract]**:
+  - **Issue / evidence:** [ensurePlan](src/agent/task-controller.ts#L1158) sends the original goal and attachment names, omitting the accepted intent parameters and clarification answers. [ensureFillPlan](src/agent/task-controller.ts#L520) receives only the original goal, a lossy summary, and extracted-photo data. The action decider does receive the answers later, so context is inconsistent across stages. The source probe showed columns absent from plan/fill inputs while present in decision history. The real checkpoint demonstrates four requested columns versus seven planned columns.
+  - **Risk:** A correct answer in chat does not constrain the generated steps/schema. The agent follows competing instructions after opening Calc.
+  - **Proposed Fix:** Carry one resolved task specification through intent, planning, fill generation, action decisions, and verification. Preserve application, filename/format, columns, and data-row count explicitly; reject a generated schema that contradicts those values. A summary may supplement, not replace, these parameters.
+
+- [ ] **FINDING-3.2 [High] [Readback mismatch between adapter and controller]**:
+  - **Issue / evidence:** [sameTypedText](src/agent/task-controller.ts#L134) tolerates whitespace differences, but [MetaComputerModel.verifyText](src/providers/meta/meta-computer-model.ts#L250) already sets confirmed false unless observedText exactly equals input.text. A mocked provider verdict confirmed a header at its destination; expected tabs versus observed spaces made the real adapter return false. The controller cannot recover that verdict because it first requires check.confirmed.
+  - **Risk:** Correct visible entries can be treated as failures. The recovery path then backs out/reselects/retypes instead of entering subsequent rows. This is a reproduced current defect, not proof it caused the older generic terminal error.
+  - **Proposed Fix:** Use one structured cell/readback comparison at both boundaries. Preserve case, numeric signs/decimals, cell order, and row boundaries. Normalize only presentation whitespace within a declared representation; never make different cell layouts equivalent by flattening all whitespace. Test through the real adapter and controller together.
+
+- [ ] **FINDING-3.3 [High] [Spreadsheet entry state and progress]**:
+  - **Issue / evidence:** [expectedFillRows](src/agent/task-controller.ts#L548) recognizes only a complete upcoming row/prefix in one type action; the probe returns one candidate for the whole header and zero for its first cell. There is no per-cell accumulator. [decideNext](src/agent/task-controller.ts#L796) flattens rows into one tab-separated string and relies on an already selected rectangle, while [Calc notes](src/agent/knowledge/app-profiles.ts#L32) prohibit clicking cells/Name Box. The generic [type recovery](src/agent/recovery/error-loop.ts#L42) recommends Escape/Ctrl+A/retype without knowing whether Calc is in cell-edit or sheet-selection mode. Header/data units are not separately represented.
+  - **Risk:** Successful cell-by-cell entry never advances the row queue; inconsistent selection can redirect flat tab input or overwrite earlier content. The model is asked to infer the target range and commit state on every turn.
+  - **Proposed Fix:** Represent headers separately from exactly ten generated data rows; establish and observe an explicit range/current cell and advance a row/cell cursor only after verified entry. Make recovery depend on observed edit/selection state and avoid unconditional select-all. Keep execution through visible desktop controls. Calc's documented Name Box supports cell/range selection, so the categorical ban is not justified by the application contract. [LibreOffice Calc guide](https://books.libreoffice.org/en/GS262/GS26203-GettingStartedWithCalc.html)
+
+- [ ] **FINDING-3.4 [Medium] [Completion does not enforce remaining rows]**:
+  - **Issue / evidence:** The [no-more-actions branch](src/agent/task-controller.ts#L869) consults a model phase judge but does not check fillDone against pending rows. A source probe with ten queued rows, zero input calls, and a mocked positive phase judge reached awaitingCompletion=true.
+  - **Risk:** The application can offer final completion review before the requested data has been entered. Final user confirmation still exists; this probe does not establish automatic completion without that confirmation.
+  - **Proposed Fix:** Gate completion of the entry phase on the resolved data-row/cell requirements, then require separate saved-file evidence. A model “done” with pending data requests reconciliation/continued work, not final review. Apply the gate to the relevant entry phase rather than blocking unrelated preliminary phases.
+
+- [ ] **FINDING-3.5 [Medium] [Shell activity mistaken for task progress]**:
+  - **Issue / evidence:** [runShellStep](src/agent/task-controller.ts#L1052) treats changed command output as fresh progress and detects repetition only through exact output signatures. The incident contains repeated process/directory checks whose CPU values/warning counts change while fillDone remains zero. Current auto-resume preserves the signature counters, but it does not make these varying inspections identical.
+  - **Risk:** The agent can spend requests checking whether LibreOffice exists/runs instead of advancing the spreadsheet. General deadlines still bound the run, but a changing process listing is not evidence of data-entry progress.
+  - **Proposed Fix:** Track progress of the active task stage separately from shell success/output changes. During GUI entry, repeated diagnostics without confirmed cell/row progress must trigger a bounded re-observation/replan or a clear failure. Do not reset entry-stall counters merely because process output changed.
+
+- [ ] **FINDING-3.6 [Low] [Failure diagnosis loses the cause]**:
+  - **Issue / evidence:** The matching run's terminal record contains only the generic failure message. [launchShell](src/agent/task-controller.ts#L995) and the outer launch handler still replace rejected work with generic text. The journal cannot recover the missing exception retrospectively.
+  - **Risk:** A provider timeout, validation rejection, capture failure, and internal exception can look alike, encouraging fixes based on speculation.
+  - **Proposed Fix:** Preserve a bounded failure category and stage/run/action correlation at the rejection boundary. Keep provider bodies, screenshots, credentials, commands, and user data out of diagnostic metadata.
+
+### Verified OK (No Action)
+
+- [x] **OK-3.1 — Clarification UI/intent handoff.** The actual answers reached the stored intent correctly. Asking Calc versus Writer can be reasonable for an ambiguous LibreOffice request; the evidenced failure is downstream context handling, not that the questions were displayed.
+- [x] **OK-3.2 — Existing structure.** Controller, typed ports, mission memory, recovery, and provider/desktop adapters are useful boundaries. This incident does not justify a framework change, microservices, or replacing every module.
+- [x] **OK-3.3 — Current regression protections.** The current code requires fresh observations between GUI actions and performs typed readback; the historical byte-delta auto-success branch is gone. Keep those protections while correcting their contracts.
+- [x] **OK-3.4 — Source gate.** Node TypeScript passes. The current focused suite passes 252 tests across 11 files. The missing real-adapter and full sales-workflow cases explain why green unit tests can coexist with the reproduced gaps.
+
+### Remediation Plan
+
+- [ ] **FIX-3.1 [Finding 3.1] — Resolved task contract.** Thread accepted intent parameters and clarifications through plan/fill calls. Validate generated columns and requested row count. **Rollback:** keep the original records; if schema reconciliation fails, pause before typing. **Validation:** exact accepted four-column schema, sales.ods, and ten data rows reach every relevant stage, including after resume.
+- [ ] **FIX-3.2 [Finding 3.2] — Shared readback semantics.** Compare structured destination cells consistently in adapter and controller. **Rollback:** uncertain entry stays unverified; never restore image-change or substring confirmation. **Validation:** tabs/spaces presentation can agree without allowing 100 versus 1000, 1.00 versus 100, different columns, or reordered cells to pass.
+- [ ] **FIX-3.3 [Finding 3.3] — Explicit spreadsheet progress.** Keep header/data roles and verified cell/row position in the fill plan. Observe selection and edit state before typing/committing/recovering. **Rollback:** preserve existing sheet data and hand off if the destination cannot be established. **Validation:** one header plus ten data rows, mixed single-cell/row entry, partial rows, dialogs, and retries with no duplicate/overwritten confirmed rows.
+- [ ] **FIX-3.4 [Finding 3.4] — Entry/save completion gates.** Require verified required rows for the entry phase and separate evidence that the requested filename was saved. **Rollback:** leave the run incomplete for user review rather than declaring success. **Validation:** a positive model verdict with zero/nine rows or an unsaved file cannot produce final completion review; a correct saved ten-row document can.
+- [ ] **FIX-3.5 [Finding 3.5] — Task-stage progress guard.** Keep semantic row/file progress separate from diagnostic command output. **Rollback:** bounded manual handoff on repeated no-progress diagnostics. **Validation:** changing CPU/time/listing output cannot reset the entry-stall counter; a newly confirmed row does reset it.
+- [ ] **FIX-3.6 [Finding 3.6] — Redacted failure categories.** Preserve failure stage/category at both launch boundaries. **Rollback:** generic public error remains available, but keep a safe category for diagnosis. **Validation:** distinguish mocked timeout/capture/parse failures while canary secrets never enter durable diagnostics.
+- [ ] **PLAN-3.1 — Focused acceptance scenario.** First repair clarification routing and adapter/controller disagreement. Then validate the entry cursor, completion gate, and diagnostic loop against the exact sales task. Acceptance: Calc with the selected four headers, ten mock data rows beneath them, saved as sales.ods, and the saved artifact's content verified. The agent should continue using the screen; file inspection belongs to the test evaluator. No guarantee of this outcome is claimed until a native isolated-session run passes.
+
+### Proposed Code Changes
+
+- [ ] **CODE-3.1 [FIX-3.1 through FIX-3.6] — Bounded file responsibilities.**
+
+```text
+src/agent/ports.ts
+  Resolved task parameters and structured fill/readback contracts.
+src/agent/task-controller.ts
+  Pass resolved context; maintain entry position; enforce completion;
+  measure task progress separately; preserve safe failure categories.
+src/providers/meta/meta-computer-model.ts
+  Supply the resolved context; use the shared readback representation.
+src/providers/meta/parse-fillplan.ts, parse-verify.ts
+  Validate header/data counts and destination-bound cell evidence.
+src/agent/knowledge/app-profiles.ts, recovery/error-loop.ts
+  Remove contradictory blanket navigation/select-all instructions;
+  recover according to observed Calc state.
+Existing controller/provider/recovery test files
+  Add integrated negative cases and the exact sales workflow fixture.
+```
+
+### Commands
+
+- [x] **CHECK-3.1 — Executed focused source checks.**
+
+```bash
+npm run typecheck:node
+npm run test:unit -- --no-cache src/agent src/providers/meta/meta-computer-model.test.ts src/providers/meta/parse-fillplan.test.ts src/providers/meta/parse-verify.test.ts
+```
+
+- [x] **CHECK-3.2 — Executed reproducible source probes.** Assertions document present defects and should change with the corresponding fixes. All external work is mocked; no test files are created.
+
+```bash
+node <<'NODE'
+const fs = require('node:fs');
+const Module = require('node:module');
+const ts = require('typescript');
+const assert = require('node:assert/strict');
+Module._extensions['.ts'] = (m, f) => m._compile(ts.transpileModule(fs.readFileSync(f, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true }
+}).outputText, f);
+const { TaskController } = require('./src/agent/task-controller.ts');
+const { MetaComputerModel } = require('./src/providers/meta/meta-computer-model.ts');
+const frame = { image: 'data:image/png;base64,aGk=', width: 800, height: 600,
+  desktopWidth: 800, desktopHeight: 600, activeWindowId: '100', capturedAt: 1000 };
+const tick = async () => { for (let i=0; i<120; i++) await Promise.resolve(); };
+const usage = { inputTokens: 1, outputTokens: 1 };
+(async () => {
+  const calls = {};
+  let ids = 0, dispatched = 0;
+  const controller = new TaskController({
+    desktop: { preflight: async () => {}, capture: async () => frame, execute: async () => { dispatched++; } },
+    model: {
+      parseIntent: async input => input.clarifications.length === 0
+        ? { ...usage, intent: { summary: 'Create a sales spreadsheet', params: {}, missing: ['columns'],
+            questions: [{ id: 'q1', question: 'Columns?', options: [] }] } }
+        : { ...usage, intent: { summary: 'Create sales spreadsheet', params: { component: 'Calc',
+            file_name: 'sales.ods', row_count: '10', columns: 'Date, Product, Quantity, Price' }, missing: [] } },
+      plan: async input => { calls.plan = { ...input, signal: undefined }; return { ...usage,
+        phases: [{ domain: 'shared', goal: 'Create sales file', steps: ['Enter rows', 'Save'], success: 'File saved' }] }; },
+      fillPlan: async input => { calls.fill = { ...input, signal: undefined }; return { ...usage,
+        units: Array.from({length:10}, (_,i)=>({cells:['Item '+i, '10']})), chunkRows: 3, startHint: 'A2' }; },
+      decide: async input => { calls.decideHasAnswer = input.history.some(x=>x.includes('Date, Product, Quantity, Price'));
+        return { ...usage, action: null, message: 'Done', warnings: [] }; },
+      verifySuccess: async () => ({ ...usage, confirmed: true, detail: 'Mock judge says done' }),
+      verifyText: async () => { throw new Error('Unexpected typing'); },
+      readSource: async () => { throw new Error('Unexpected source'); },
+      extractFields: async () => { throw new Error('Unexpected extract'); },
+    },
+    id: () => 'probe-'+(++ids), describe: () => '', validateAction: x => x, validateShell: x => x,
+    changed: () => {}, now: () => 1000,
+  });
+  controller.start({ goal:'Open LibreOffice, create sales file with 10 mock rows', maxSteps:20, maxMinutes:1,
+    approvalMode:'ask_approval', screenConsent:true, isolatedEnvironment:true });
+  await tick();
+  assert.equal(controller.getSnapshot().status, 'needs_user');
+  controller.resume(controller.getSnapshot().runId, 'Calc; sales.ods; Date, Product, Quantity, Price');
+  await tick();
+  const snapshot = controller.getSnapshot();
+  assert.equal(JSON.stringify(calls.plan).includes('Date, Product, Quantity, Price'), false);
+  assert.equal(JSON.stringify(calls.fill).includes('Date, Product, Quantity, Price'), false);
+  assert.equal(calls.decideHasAnswer, true);
+  assert.equal(snapshot.awaitingCompletion, true);
+  assert.equal(dispatched, 0);
+  console.log(JSON.stringify({probe:'clarification-routing-and-completion',
+    planReceivesColumns:false, fillReceivesStructuredColumns:false, decisionReceivesAnswer:true,
+    fillDone:controller.fillDone, fillTotal:controller.fillUnits.length, dispatched, awaitingCompletion:snapshot.awaitingCompletion}));
+  controller.stop(snapshot.runId); controller.dispose();
+
+  const request = async () => new Response(JSON.stringify({status:'completed',
+    usage:{input_tokens:1,output_tokens:1},output:[{type:'message',content:[{type:'output_text',
+      text:JSON.stringify({confirmed:true,detail:'Header visible in intended cells',observedText:'Date Product Quantity Price',
+        destinationConfirmed:true,verifiedRows:1})}]}]}));
+  const model = new MetaComputerModel({apiKey:'DUMMY',model:'muse-spark-1.3'},request);
+  const verdict=await model.verifyText({text:'Date\tProduct\tQuantity\tPrice',before:frame,observation:frame,
+    destination:'A1:D1',expectedRows:[['Date','Product','Quantity','Price']],signal:new AbortController().signal});
+  assert.equal(verdict.confirmed,false);
+  console.log(JSON.stringify({probe:'provider-readback-whitespace',providerReportedConfirmed:true,
+    adapterReturnedConfirmed:verdict.confirmed,expectedSeparators:'tabs',readbackSeparators:'spaces'}));
+
+  const progress = Object.create(TaskController.prototype);
+  progress.fillUnits=[['Date','Product','Quantity','Price'],['2026-11-01','Pen','2','10']];
+  progress.fillDone=0;progress.fillChunk=3;
+  assert.equal(progress.expectedFillRows('Date\tProduct\tQuantity\tPrice').length,1);
+  assert.equal(progress.expectedFillRows('Date').length,0);
+  console.log(JSON.stringify({probe:'row-progress-shape',wholeHeaderCandidateRows:1,firstHeaderCellCandidateRows:0,
+    cellByCellCompletionTracked:false}));
+})().catch(error=>{console.error(error);process.exitCode=1;});
+NODE
+```
+
+- [ ] **CHECK-3.3 — After implementation.** Run the focused regression suite and npm run check, then the isolated native sales acceptance case. Never infer native success from the current 252 passing tests.
+
+### Quality Assurance Task Checklist
+
+- [x] **QA-3.1 — Historical versus current evidence separated.** Old runtime behavior is attributed to the saved run; current bugs are independently demonstrated against 4d4c8a0.
+- [x] **QA-3.2 — Evidence and proposed scope mapped.** Every finding has source/runtime/probe evidence and a minimal fix with rollback/validation. No unrelated rewrite or performance claim is included.
+- [x] **QA-3.3 — User data preserved.** Read only the relevant run records; did not modify history, checkpoints, credentials, screenshots, office documents, or processes. This case investigation changes only this TODO.
+- [ ] **QA-3.4 — Native acceptance remains open.** Neither the precise historical final exception nor a successful current-version ten-row sales run has been established. No new live model usage or desktop replay was performed.
