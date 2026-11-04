@@ -42,6 +42,7 @@ const intentInstructions = [
   'Schema: {"summary": "short restatement of the goal", "params": {"name": "value"}, "missing": ["name"], "questions": [{"id": "q1", "question": "Which account?", "options": ["Personal", "Work"]}]}.',
   'Put every concrete value stated in the goal into params, such as dates, names, amounts, and file names.',
   'Put every value the goal needs but does not state into missing. Never invent values.',
+  'If the user explicitly requests mock, dummy, or sample data, generating those example values is authorized; do not ask them to supply the individual rows. Honor any specified columns, row count, application, filename, and folder.',
   'For each missing value ask one plain question the user can answer in seconds, with 1 to 4 short tappable options. Options are common-sense suggestions, never invented facts. The user may also type a custom answer.',
   'Use at most 3 questions with ids q1, q2, q3. Omit questions when missing is empty. Return every question this goal needs in this single response - ask all of them at once instead of one now and more later. Use at most 20 params and 20 missing names. Keep the summary under 500 characters, each question under 300 characters, each option under 100 characters, and each value under 200 characters.',
   'Attached images named in the goal context are already loaded - never ask the user to upload them or provide a file path for them.',
@@ -91,7 +92,8 @@ const extractInstructions = [
 
 const fillPlanInstructions = [
   'You convert data-entry source material into an ordered fill list. Reply with exactly one JSON object and nothing else: no markdown, no code fences, no explanation.',
-  'Schema: {"units": [{"cells": ["Lamp", "12", "450"]}], "chunkRows": 5, "startHint": "first empty row below existing data"}.',
+  'Schema: {"headers": ["Product", "Quantity", "Price"], "units": [{"cells": ["Lamp", "12", "450"]}], "chunkRows": 3, "startHint": "A2, below the header in A1:C1"}.',
+  'headers contains the requested column labels only when creating a new table. units contains DATA rows only, never a header row. Ten requested rows means ten units in addition to the header. Match the resolved columns exactly and keep every row the same width. For an existing table, omit headers unless the user asks to add them.',
   'One unit per row, cells left-to-right as plain strings. Preserve every value verbatim from the goal or data - never invent, reorder, or drop rows. At most 200 units, 10 cells each, 200 chars per cell.',
   'Exception: when the goal asks for a number of dummy or sample rows without giving values, invent that many plausible rows in the requested columns.',
   'chunkRows (1-10) is how many rows to type per round; prefer 3 so each chunk reads back exactly. startHint (under 200 chars) says where typing should begin.',

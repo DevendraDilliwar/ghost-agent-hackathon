@@ -39,7 +39,7 @@ const genericStall = 'The last action caused no visible change. Do not repeat it
 
 function guidanceFor(context: FailureContext): string {
   if (context.action.type === 'type' && context.typeDetail) {
-    return 'The last type failed (' + context.typeDetail.slice(0, 200) + '). Do not repeat it unchanged - back out (Escape), re-check focus, select all first (Ctrl+A), then type again.';
+    return 'The last type was not verified (' + context.typeDetail.slice(0, 200) + '). Re-check the screenshot, focused field, selection, and whether the last cell needs committing before retrying. In a spreadsheet, do not use Ctrl+A or retype a whole range blindly: preserve confirmed cells and target only the unverified destination.';
   }
   switch (context.action.type) {
     case 'keypress':

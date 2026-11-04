@@ -155,6 +155,7 @@ export class TaskController {
   private fillUnits: string[][] = [];
   private fillHeaders: string[] = [];
   private fillHeadersDone = false;
+  private currentHeaderCellIndex = 0;
   private currentCellIndex = 0;
   private entryPhaseShellCount = 0;
   private fillDone = 0;
@@ -230,6 +231,7 @@ export class TaskController {
     this.fillUnits = [];
     this.fillHeaders = [];
     this.fillHeadersDone = false;
+    this.currentHeaderCellIndex = 0;
     this.currentCellIndex = 0;
     this.entryPhaseShellCount = 0;
     this.fillDone = 0;
@@ -557,21 +559,13 @@ export class TaskController {
 
   /** Only exact complete upcoming rows can be candidates for progress. */
   private expectedFillRows(text: string): string[][] {
+    if (this.fillHeaders.length && !this.fillHeadersDone) {
+      return this.fillHeaders.join('\t') === text ? [this.fillHeaders] : [];
+    }
     const rows = this.fillUnits.slice(this.fillDone, this.fillDone + this.fillChunk);
     for (let count = 1; count <= rows.length; count++) {
       const prefix = rows.slice(0, count);
       if (prefix.flat().join('\t') === text) return prefix;
-    }
-    const currentRow = rows[0];
-    if (currentRow) {
-      const cellIdx = this.currentCellIndex ?? 0;
-      if (currentRow[cellIdx] === text || currentRow[0] === text) {
-        return [[text]];
-      }
-    }
-    if (this.fillHeaders?.length && !this.fillHeadersDone) {
-      if (this.fillHeaders.join('\t') === text) return [this.fillHeaders];
-      if (this.fillHeaders[0] === text) return [[text]];
     }
     return [];
   }
@@ -678,6 +672,14 @@ export class TaskController {
             if (this.fillHeaders?.length && !this.fillHeadersDone && sameTypedText(text, this.fillHeaders.join('\t'))) {
               this.fillHeadersDone = true;
               this.record('verify', 'success', 'Header row confirmed.');
+            } else if (this.fillHeaders.length && !this.fillHeadersDone) {
+              if (text === this.fillHeaders[this.currentHeaderCellIndex]) {
+                this.currentHeaderCellIndex += 1;
+                if (this.currentHeaderCellIndex === this.fillHeaders.length) {
+                  this.fillHeadersDone = true;
+                  this.record('verify', 'success', 'Header row confirmed.');
+                }
+              }
             } else if (expectedRows.length > 0 && check.verifiedRows === expectedRows.length) {
               verifiedFillRows = check.verifiedRows;
               this.currentCellIndex = 0;
@@ -685,7 +687,7 @@ export class TaskController {
               const rows = this.fillUnits.slice(this.fillDone, this.fillDone + this.fillChunk);
               const currentRow = rows[0];
               const cellIdx = this.currentCellIndex ?? 0;
-              if (currentRow && (text === currentRow[cellIdx] || (cellIdx === 0 && text === currentRow[0]))) {
+              if (currentRow && text === currentRow[cellIdx]) {
                 this.currentCellIndex = cellIdx + 1;
                 if (this.currentCellIndex >= currentRow.length) {
                   this.currentCellIndex = 0;
@@ -830,14 +832,16 @@ export class TaskController {
     if (this.extracted) history.push('Source bill fields: ' + formatExtracted(this.extracted));
     if (this.fillHeaders?.length && !this.fillHeadersDone) {
       history.push('Header row to enter: ' + this.fillHeaders.join('\t'));
+      if (this.currentHeaderCellIndex) history.push('Next unconfirmed header cell: ' + this.fillHeaders[this.currentHeaderCellIndex]);
     }
     if (this.fillUnits.length) {
       history.push('Fill plan: ' + this.fillUnits.length + ' rows'
         + (this.fillStartHint ? ' (' + this.fillStartHint.slice(0, 120) + ')' : '') + ', ' + this.fillDone + ' done.');
       const chunk = this.fillUnits.slice(this.fillDone, this.fillDone + this.fillChunk);
       if (chunk.length) {
-        history.push('Next chunk - type exactly, Tab between every cell (Tab wraps rows inside a selected range): '
+        history.push('Next chunk - first establish the exact target rectangle in the sheet with the Name Box and Enter. Its width must equal the number of columns and its height the chunk row count. Type exactly, Tab between every cell (Tab wraps rows only inside that selected range): '
           + chunk.map(cells => cells.join('\t')).join('\t').slice(0, 1500));
+        if (this.currentCellIndex) history.push('Current data row is partially entered: ' + this.currentCellIndex + ' cells confirmed. Continue at cell ' + (this.currentCellIndex + 1) + ': ' + chunk[0]![this.currentCellIndex] + '. Do not repeat the completed cells.');
       }
     }
     if (progressNote) history.push(progressNote);
@@ -1443,6 +1447,9 @@ export class TaskController {
       } catch {
         // A bad audit must never break verification.
       }
+    }
+    if (check.confirmed && this.fillHeaders.length > 0 && !this.fillHeadersDone) {
+      check = { ...check, confirmed: false, detail: 'The requested header row has not been confirmed.' };
     }
     if (check.confirmed && this.fillUnits.length > 0 && this.fillDone < this.fillUnits.length) {
       check = { ...check, confirmed: false, detail: 'Data entry incomplete (' + this.fillDone + ' of ' + this.fillUnits.length + ' rows entered).' };

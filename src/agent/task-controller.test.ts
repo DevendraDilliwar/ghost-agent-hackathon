@@ -848,7 +848,7 @@ describe('task lifecycle', () => {
     await vi.waitFor(() => expect(controller.getSnapshot().status).toBe('failed'));
     expect(model.verifyText).toHaveBeenCalledTimes(6);
     expect(model.decide).toHaveBeenCalledTimes(6);
-    expect(model.decide.mock.calls[1]?.[0].history).toContain('The last type failed (No text field visible.). Do not repeat it unchanged - back out (Escape), re-check focus, select all first (Ctrl+A), then type again.');
+    expect(model.decide.mock.calls[1]?.[0].history).toContain('The last type was not verified (No text field visible.). Re-check the screenshot, focused field, selection, and whether the last cell needs committing before retrying. In a spreadsheet, do not use Ctrl+A or retype a whole range blindly: preserve confirmed cells and target only the unverified destination.');
     expect(controller.getSnapshot().message).toContain('Stopped after 3 stalls');
   });
 
@@ -1235,6 +1235,37 @@ describe('task lifecycle', () => {
     const history = model.decide.mock.calls[1]?.[0].history.join('\n') ?? '';
     expect(history).toContain('Fill plan: 4 rows, 2 done.');
     expect(history).toContain('c\t3\td\t4');
+  });
+
+  it('does not count one verified cell as a complete multi-cell row', async () => {
+    const { controller, model } = setup();
+    model.fillPlan.mockResolvedValue({ units: [{ cells: ['Lamp', '2', '100'] }],
+      chunkRows: 1, startHint: 'A2', inputTokens: 1, outputTokens: 1 });
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Lamp' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '2' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: '100' } })
+      .mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(model.decide.mock.calls.length).toBeGreaterThanOrEqual(4));
+    expect(model.verifyText.mock.calls[0]?.[0].expectedRows).toEqual([]);
+    expect(model.decide.mock.calls[1]?.[0].history.join('\n')).toContain('0 done.');
+    expect(model.decide.mock.calls[2]?.[0].history.join('\n')).toContain('0 done.');
+    expect(model.decide.mock.calls[3]?.[0].history.join('\n')).toContain('1 done.');
+  });
+
+  it('keeps separately typed headers out of the data row count', async () => {
+    const { controller, model } = setup();
+    model.fillPlan.mockResolvedValue({ headers: ['Product', 'Qty'], units: [{ cells: ['Lamp', '2'] }],
+      chunkRows: 1, startHint: 'A2', inputTokens: 1, outputTokens: 1 });
+    model.decide.mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Product' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Qty' } })
+      .mockResolvedValueOnce({ ...proposed, action: { type: 'type', text: 'Lamp\t2' } })
+      .mockResolvedValue(finished);
+    controller.start({ ...configuration, approvalMode: 'full_access', maxSteps: 10 });
+    await vi.waitFor(() => expect(model.decide.mock.calls.length).toBeGreaterThanOrEqual(4));
+    expect(model.decide.mock.calls[2]?.[0].history.join('\n')).toContain('0 done.');
+    expect(model.decide.mock.calls[2]?.[0].history.join('\n')).not.toContain('Header row to enter:');
+    expect(model.decide.mock.calls[3]?.[0].history.join('\n')).toContain('1 done.');
   });
 
   it('shows the open-window inventory on every decision', async () => {
